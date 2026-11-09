@@ -88,8 +88,8 @@ class FloatApp:
         self.current = None      # 当前展示的提醒 key
         self.auto_left = 0
         self.collapsed = False
+        # _build_schedule 会同时填好 next_run 和 reschedule
         self.next_run = self._build_schedule()
-        self.reschedule = {}     # key -> (类型, 参数)，触发后用来排下一次
 
         root.title("Health Float")
         root.overrideredirect(True)          # 无边框
