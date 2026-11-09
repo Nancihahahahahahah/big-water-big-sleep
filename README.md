@@ -16,7 +16,7 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/Nancihahahahahahah/大水大睡大健康.git health-float
+git clone https://github.com/Nancihahahahahahah/big-water-big-sleep.git
 cd health-float
 python3 health_float.py
 ```
