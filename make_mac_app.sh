@@ -14,6 +14,7 @@ APP="Health Float.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp health_float.py config.json "$APP/Contents/Resources/"
+cp -R assets "$APP/Contents/Resources/assets"
 
 cat > "$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
