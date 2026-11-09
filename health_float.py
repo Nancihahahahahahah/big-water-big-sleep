@@ -147,6 +147,11 @@ class FloatApp:
         except (tk.TclError, ValueError):
             pass
         root.configure(bg=C_CABIN)
+        # macOS 有时会把无边框窗口重置回带红绿灯的标准窗口：
+        # 窗口每次被映射/尺寸变化后都重申一次无边框状态
+        root.bind("<Map>", self._ensure_borderless, add="+")
+        root.after(200, self._ensure_borderless)
+        root.after(1200, self._ensure_borderless)
 
         self.w, self.h = SIZE_IDLE[0], SIZE_IDLE[1] + STRIP_IDLE
         self.img_w, self.img_h = SIZE_IDLE          # 当前舷窗图尺寸（窗口=图+文字条）
@@ -167,6 +172,14 @@ class FloatApp:
 
         root.after(50, self._animate)
         root.after(1000, self._tick)
+
+    def _ensure_borderless(self, *_):
+        try:
+            if not self.root.overrideredirect():
+                self.root.overrideredirect(True)
+            self.root.attributes("-topmost", True)
+        except tk.TclError:
+            pass
 
     # ---------- 素材 ----------
     def _load_images(self):
@@ -380,6 +393,7 @@ class FloatApp:
         self.w, self.h = w, h
         self.root.geometry(f"{w}x{h}+{self.x}+{self.y}")
         self.cv.config(width=w, height=h)
+        self._ensure_borderless()  # 尺寸变化可能让系统重置无边框
 
     # ---------- 每秒逻辑 ----------
     def _tick(self):
