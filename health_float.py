@@ -35,6 +35,8 @@ DEFAULT_CONFIG = {
     "sleep_time": "22:30",      # 每天提醒睡觉（"" = 关闭）
     "prewarn_seconds": 120,     # 提前多少秒开始呼吸提示（0 = 关闭）
     "blackout_seconds": 10,     # 洗澡/睡觉提醒先黑屏 N 秒（0 = 关闭）
+    "blackout_brief_seconds": 2,  # 眺望/站立提醒先黑屏 N 秒（0 = 关闭）
+    "meeting_mode": False,      # 会议模式：开启后提醒永不黑屏
     "sound": True,              # 提醒时是否播放提示音（仅 macOS）
     "opacity": 0.96             # 舷窗透明度 0~1
 }
@@ -47,7 +49,9 @@ SETT_ITEMS = [
     ("shower_time", "洗澡提醒 🛁", "每天几点提醒", "time"),
     ("sleep_time", "睡觉提醒 🌙", "每天几点提醒", "time"),
     ("prewarn_seconds", "提前预告 ⏰", "提前几秒开始提示（0=关）", "int"),
-    ("blackout_seconds", "黑屏提醒 🖥", "洗澡/睡觉先黑屏几秒（0=关）", "int"),
+    ("blackout_seconds", "洗澡/睡觉黑屏 🖥", "先黑屏几秒（0=关）", "int"),
+    ("blackout_brief_seconds", "眺望/站立黑屏 🌑", "先黑屏几秒（0=关）", "int"),
+    ("meeting_mode", "会议模式 🎙", "开启后提醒永不黑屏", "bool"),
     ("sound", "提示音 🔔", "提醒时播放提示音", "bool"),
 ]
 
@@ -114,13 +118,13 @@ def round_rect_pts(x1, y1, x2, y2, r):
             x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
 
 
-# key -> (标题, 副文案, icon, 自动关闭秒数, 是否黑屏提醒)
+# key -> (标题, 副文案, icon, 自动关闭秒数, 黑屏时长类别)
 ALERT_META = {
-    "eye":    ("该看远方啦", "望向 6 米外 20 秒\n让眼睛休息一下", "👀", 20, False),
-    "move":   ("起来动一动", "站起来伸展 1 分钟\n久坐是慢性刺客", "🧘", 90, False),
-    "water":  ("喝杯水吧",   "水是身体的\n第一供应商", "💧", 60, False),
-    "shower": ("去洗澡啦",   "早点洗澡\n晚上睡得更香", "🛁", 120, True),
-    "sleep":  ("该睡觉啦",   "放下屏幕\n明天还有满格的自己", "🌙", 120, True),
+    "eye":    ("该看远方啦", "望向 6 米外 20 秒\n让眼睛休息一下", "👀", 20, "brief"),
+    "move":   ("起来动一动", "站起来伸展 1 分钟\n久坐是慢性刺客", "🧘", 90, "brief"),
+    "water":  ("喝杯水吧",   "水是身体的\n第一供应商", "💧", 60, None),
+    "shower": ("去洗澡啦",   "早点洗澡\n晚上睡得更香", "🛁", 120, "long"),
+    "sleep":  ("该睡觉啦",   "放下屏幕\n明天还有满格的自己", "🌙", 120, "long"),
 }
 
 # —— 配色 / 尺寸（固定，不缩放）——
@@ -356,6 +360,7 @@ class FloatApp:
         self.cv.bind("<B1-Motion>", self._drag_move, add="+")
         self.cv.bind("<Double-Button-1>",
                      lambda e: self._open_settings(), add="+")
+        self.cv.bind("<Button-3>", self._toggle_meeting, add="+")
         self.cv.bind("<Enter>", lambda e: self._set_hover(True), add="+")
         self.cv.bind("<Leave>", lambda e: self._set_hover(False), add="+")
 
@@ -564,8 +569,9 @@ class FloatApp:
             self.current = self.queue.pop(0)
             self.auto_left = ALERT_META[self.current][3]
             self._play_sound()
-            if ALERT_META[self.current][4] and self._blackout_secs() > 0:
-                self._show_blackout(self.current)
+            secs = self._blackout_for(self.current)
+            if secs > 0:
+                self._show_blackout(self.current, secs)
             self._resize_to(*ALERT)
             self._layout()
 
@@ -585,9 +591,17 @@ class FloatApp:
 
         self.root.lift()
 
-    def _blackout_secs(self):
+    def _blackout_for(self, key):
+        """该提醒的黑屏秒数（会议模式下恒为 0）"""
+        if self.cfg.get("meeting_mode"):
+            return 0
+        kind = ALERT_META[key][4]
+        if kind is None:
+            return 0
+        cfg_key = ("blackout_seconds" if kind == "long"
+                   else "blackout_brief_seconds")
         try:
-            return int(self.cfg.get("blackout_seconds", 10) or 0)
+            return int(self.cfg.get(cfg_key, 0) or 0)
         except (TypeError, ValueError):
             return 0
 
@@ -601,6 +615,8 @@ class FloatApp:
             return
         m, s = left // 60, left % 60
         short = f"{m} 分{s:02d}秒" if m else f"{s} 秒"
+        if self.cfg.get("meeting_mode"):
+            short = f"🔇 {short}"          # 会议模式指示
         name = ALERT_META[key][0]
         if self.prewarn:
             self.cv.itemconfig(self.time_id, text=f"{short}后")
@@ -618,12 +634,14 @@ class FloatApp:
                                text=f"{self.auto_left} 秒后自动消失"
                                if self.auto_left > 0 else "")
 
-    # ---------- 黑屏遮罩（洗澡/睡觉） ----------
-    def _show_blackout(self, key):
+    # ---------- 黑屏遮罩 ----------
+    def _show_blackout(self, key, secs):
         if self.blackout and self.blackout.winfo_exists():
             return
-        title, sub, icon, _, _ = ALERT_META[key]
-        self.black_left = self._blackout_secs()
+        title, sub, icon, _, kind = ALERT_META[key]
+        self.black_left = secs
+        self._bo_exts = 0                      # 鼠标活动延长次数
+        self._bo_persist = (kind == "long")    # 洗澡/睡觉：鼠标还在动就继续黑
 
         bw = tk.Toplevel(self.root)
         self.blackout = bw
@@ -645,14 +663,31 @@ class FloatApp:
         self.bo_count = tk.Label(bw, text="", font=ui_font(16, True),
                                  bg="#000000", fg="#5c6b7a")
         self.bo_count.pack()
-        tk.Label(bw, text="黑屏休息 · 点任意处跳过", font=ui_font(10),
-                 bg="#000000", fg="#3a414d").pack(side="bottom", pady=28)
+        foot = ("还在动鼠标就继续黑屏 · 点一下跳过" if self._bo_persist
+                else "点任意处跳过")
+        tk.Label(bw, text=foot, font=ui_font(10), bg="#000000",
+                 fg="#3a414d").pack(side="bottom", pady=28)
         bw.bind("<Button-1>", lambda e: self._close_blackout())
+        if self._bo_persist:
+            # 遮罩盖满全屏：鼠标一动（还在工作）就重置黑屏倒计时
+            bw.bind("<Motion>", self._on_bo_motion, add="+")
         for w in bw.winfo_children():
             w.bind("<Button-1>", lambda e: self._close_blackout())
-        self._bo_tick()
+            if self._bo_persist:
+                w.bind("<Motion>", self._on_bo_motion, add="+")
+        self.bo_count.config(text=f"{secs} 秒后回来")
+        self.root.after(1000, self._bo_tick)
         bw.lift()
         bw.focus_force()
+
+    def _on_bo_motion(self, e):
+        if not (self.blackout and self.blackout.winfo_exists()):
+            return
+        if self._bo_exts >= 30:      # 安全阀：最多延长 30 次，防永久锁屏
+            return
+        self._bo_exts += 1
+        self.black_left = self._blackout_for(self.current)
+        self.bo_count.config(text="检测到你还在工作 · 继续黑屏休息")
 
     def _bo_tick(self):
         if not (self.blackout and self.blackout.winfo_exists()):
@@ -691,6 +726,11 @@ class FloatApp:
         self._layout()
 
     # ---------- 交互 ----------
+    def _toggle_meeting(self, e=None):
+        self.cfg["meeting_mode"] = not bool(self.cfg.get("meeting_mode"))
+        save_config(self.cfg)
+        self._update_countdown()
+
     def _set_hover(self, on):
         self.hover = on
 
