@@ -35,9 +35,11 @@ python3 health_float.py
 
 ### 各平台启动方式
 
-- **macOS**：双击 `start_mac.command`，或终端运行上面的命令
+- **macOS**：双击 `start_mac.command`；或运行 `./make_mac_app.sh` 生成一个 `Health Float.app`，以后双击 app 就行（推荐，可配合开机自启）
 - **Windows**：双击 `start_windows.bat`（用 `pythonw` 启动，不弹黑框）
 - **Linux**：运行 `./start_linux.sh`
+
+> 所有提醒时间都读取**本机系统时钟**，换电脑、换时区都不用改任何配置。
 
 ## 自定义提醒频率
 
@@ -45,27 +47,30 @@ python3 health_float.py
 
 ```json
 {
-  "eye_minutes": 20,        // 每 N 分钟看远方，0 = 关闭
-  "move_minutes": 60,       // 每 N 分钟起来活动，0 = 关闭
-  "water_minutes": 120,     // 每 N 分钟喝水，0 = 关闭
-  "shower_time": "21:30",   // 每天洗澡提醒时间，"" = 关闭
-  "sleep_time": "22:30",    // 每天睡觉提醒时间，"" = 关闭
-  "sound": true,            // 提醒时播放提示音（仅 macOS）
-  "opacity": 0.88           // 待机时卡片透明度 0 ~ 1
+  "eye_minutes": 20,          // 每 N 分钟看远方，0 = 关闭
+  "move_minutes": 60,         // 每 N 分钟起来活动，0 = 关闭
+  "water_minutes": 120,       // 每 N 分钟喝水，0 = 关闭
+  "shower_time": "21:30",     // 每天洗澡提醒时间，"" = 关闭
+  "sleep_time": "22:30",      // 每天睡觉提醒时间，"" = 关闭
+  "prewarn_seconds": 120,     // 提前多少秒弹出预告泡泡，0 = 不预告
+  "sound": true,              // 提醒时播放提示音（仅 macOS）
+  "opacity": 0.92             // 泡泡透明度 0 ~ 1
 }
 ```
 
 改完重启脚本生效。
 
-## 小卡片怎么用
+## 小泡泡怎么用
 
-- 拖住卡片可以放到屏幕任意角落
-- 点右上角 `—` 折叠成一个小 🌿，再点展开
-- 提醒弹出时会"叮"一声并高亮；看远方提醒自带 20 秒倒计时，其余会自动消失，也可点「知道了 ✓」立即关掉
+- 平时是一个**浅蓝色小圆泡**，只显示**下一个要来的提醒**的 icon 和倒计时——喝水快到点就显示 💧，睡觉快到点就显示 🌙，一次只专注于一件正事
+- 快到点时（默认提前 2 分钟）泡泡会**变大弹出预告**，开始倒数
+- 到点后弹出提醒卡：大 icon + 一句话，到点提醒什么就只显示什么 icon
+- 拖住泡泡/卡片可以放到屏幕任意角落；提醒卡会自动消失，也可点「知道了 ✓」立即关掉
+- 看远方提醒自带 20 秒倒计时，帮你数完这一分钟
 
 ## 开机自启（可选）
 
-- **macOS**：系统设置 → 通用 → 登录项 → 添加 `start_mac.command`
+- **macOS（推荐）**：运行 `./make_mac_app.sh` 生成 `Health Float.app`，然后「系统设置 → 通用 → 登录项」→ 添加这个 app
 - **Windows**：`Win + R` 输入 `shell:startup`，把 `start_windows.bat` 的快捷方式放进去
 - **Linux**：把 `start_linux.sh` 加入桌面环境的自启程序列表
 

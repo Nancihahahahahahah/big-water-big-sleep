@@ -1,0 +1,3 @@
+#!/bin/zsh
+DIR="$(dirname "$0")/../Resources"
+exec "/Users/zhounanxi/.workbuddy/binaries/python/versions/3.13.12/bin/python3" "$DIR/health_float.py" >> "$DIR/float.log" 2>&1
