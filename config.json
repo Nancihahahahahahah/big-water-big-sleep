@@ -1,0 +1,9 @@
+{
+  "eye_minutes": 20,
+  "move_minutes": 60,
+  "water_minutes": 120,
+  "shower_time": "21:30",
+  "sleep_time": "22:30",
+  "sound": true,
+  "opacity": 0.88
+}
