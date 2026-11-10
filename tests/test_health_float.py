@@ -112,9 +112,18 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual((t.hour, t.minute), (0, 0))
 
     def test_next_daily_is_in_future(self):
+        """next_daily 返回的时间点必须严格在未来"""
         now = datetime.now()
         t = hf.next_daily(now.hour, now.minute)
         self.assertGreater(t, now)
+        self.assertEqual((t.hour, t.minute), (now.hour, now.minute))
+
+    def test_next_daily_fixed_slot(self):
+        """指定固定时刻时，结果的小时分钟必须精确匹配"""
+        for h, m in ((0, 0), (21, 30), (23, 59)):
+            t = hf.next_daily(h, m)
+            self.assertEqual((t.hour, t.minute), (h, m))
+            self.assertGreater(t, datetime.now())
 
 
 class TestApp(unittest.TestCase):
@@ -130,6 +139,15 @@ class TestApp(unittest.TestCase):
         cls.root.destroy()
 
     def setUp(self):
+        # 关键：把配置路径隔离到临时目录。
+        # 否则测试会读写用户真实配置（~/Library/Application Support/...），
+        # 在 CI 上那个路径可能不存在/不可写 → 随机失败。
+        self._saved_path = hf.CONFIG_PATH
+        self._saved_legacy = hf.LEGACY_CONFIG_PATH
+        tmp = tempfile.mkdtemp()
+        hf.CONFIG_PATH = os.path.join(tmp, "config.json")
+        hf.LEGACY_CONFIG_PATH = os.path.join(tmp, "legacy.json")
+
         self.cfg = dict(hf.DEFAULT_CONFIG)
         self.app = hf.FloatApp(self.root, self.cfg)
         self.errors = []
@@ -143,6 +161,8 @@ class TestApp(unittest.TestCase):
             pass
         self.app.current = None
         self.app.queue.clear()
+        hf.CONFIG_PATH = self._saved_path
+        hf.LEGACY_CONFIG_PATH = self._saved_legacy
 
     # ---------- 静音模式 ----------
     def test_silent_mode_indicator(self):
