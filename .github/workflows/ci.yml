@@ -24,19 +24,21 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # Ubuntu 需要 tkinter 和虚拟显示（headless X）
-      # 注意：setup-python 装的是自带版本，必须用 pip 装 tkinter 绑定
-      # （apt 的 python3-tk 只对应系统 Python，对 3.9/3.13 无效）
-      - name: Install system deps (Linux)
+      # Ubuntu 需要 Tcl/Tk 运行库和虚拟显示（headless X）
+      # 关键：先验证再安装 —— setup-python 的解释器通常已带 _tkinter，
+      # 但可能缺系统的 libtk/libtcl 动态库（这才是真正要装的）。
+      - name: Ensure tkinter (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libtk8.6 libtcl8.6
-          # setup-python 的解释器自己找 tkinter 绑定
-          python -c "import tkinter" 2>/dev/null || \
-            sudo apt-get install -y "python${{ matrix.python }}-tk" || true
-          python -c "import tkinter; tkinter.Tk().destroy()" || \
-            (echo "tkinter 不可用，安装失败"; exit 1)
+          if ! python -c "import tkinter" >/dev/null 2>&1; then
+            echo "tkinter 模块缺失，尝试安装系统包"
+            sudo apt-get install -y python3-tk || true
+          fi
+          python -c "import tkinter; print('tkinter OK', tkinter.TkVersion)"
+          # 建窗口必须要有 X server，所以这一步要跑在 xvfb 下
+          xvfb-run -a python -c "import tkinter; r=tkinter.Tk(); r.update(); r.destroy(); print('窗口创建 OK')"
 
       - name: Run tests (Linux, headless)
         if: runner.os == 'Linux'
