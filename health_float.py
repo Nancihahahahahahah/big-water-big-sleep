@@ -133,8 +133,9 @@ C_TEXT = "#33465c"
 C_DIM = "#5c6b7a"
 C_PANEL = "#f4f6f9"
 C_BTN_FG = "#f2f6fa"
-BUBBLE = (140, 193)          # 常驻泡泡 = 整张素材图
-GRAY_Y = 150                 # 素材图灰区起始 y（灰区比例 0.778）
+BUBBLE = (140, 241)          # 常驻泡泡 = 素材图 140x193 + 下方文字条 48
+BUBBLE_IMG = (140, 193)      # 素材图尺寸
+STRIP_H = 48                 # 图下文字条高度（画布灰底，与图四角同色）
 ALERT = (272, 230)
 ALERT_IMG = (132, 182)
 ALERT_IMG_XY = (10, 12)
@@ -465,14 +466,14 @@ class FloatApp:
                    self.a_btn_id, self.a_btn_txt, self.a_hint_id,
                    self.panel_id)
         self._show(self.icon_id, self.time_id, self.name_id)
-        img = self.images.get(BUBBLE)
+        img = self.images.get(BUBBLE_IMG)
         if img:
             cv.itemconfig(self.img_id, image=img)
         cv.coords(self.img_id, 0, 0)
-        cv.coords(self.icon_id, w * 0.535, h * 0.46)
-        # 两行文字都在素材灰区内，行距拉开（灰区 150~193）
-        cv.coords(self.time_id, w / 2, GRAY_Y + 10)
-        cv.coords(self.name_id, w / 2, GRAY_Y + 32)
+        cv.coords(self.icon_id, BUBBLE_IMG[0] * 0.535, BUBBLE_IMG[1] * 0.46)
+        # 文字条在图片下方（y >= 193），与图物理隔离，行距舒展
+        cv.coords(self.time_id, w / 2, BUBBLE_IMG[1] + 12)
+        cv.coords(self.name_id, w / 2, BUBBLE_IMG[1] + 34)
         self._update_countdown()
 
     def _layout_alert(self):
