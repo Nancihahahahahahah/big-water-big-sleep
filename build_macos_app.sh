@@ -10,6 +10,9 @@
 #   - 双击即可运行；拖进「登录项」即可开机自启
 #
 # 依赖：pip install pyinstaller（构建机需要；使用者不需要）
+#
+# 架构说明：优先用 universal2 的 Python（Intel + Apple Silicon 通用）。
+# 用单架构 Python 打出来的 app 只能在一种芯片上运行。
 # ============================================================
 set -e
 cd "$(dirname "$0")"
@@ -19,10 +22,53 @@ OUT="dist"
 APP_NAME="Health Float"
 
 echo "==> 检查构建环境"
-if ! "$BUILD_PY" -c "import PyInstaller, tkinter" >/dev/null 2>&1; then
-    echo "❌ 需要 PyInstaller 和 tkinter。执行："
-    echo "   $BUILD_PY -m pip install pyinstaller"
+# 优先用 universal2（Intel + Apple Silicon 通用）的 Python，
+# 否则打出来的 app 只能在一种架构上跑。
+if [ -z "$HEALTH_FLOAT_BUILD_PYTHON" ]; then
+    for CAND in /usr/local/bin/python3 \
+                /Library/Frameworks/Python.framework/Versions/Current/bin/python3 \
+                python3 /opt/homebrew/bin/python3; do
+        if command -v "$CAND" >/dev/null 2>&1 && \
+           "$CAND" -c "import tkinter; tkinter.Tk().destroy()" >/dev/null 2>&1; then
+            if file "$CAND" 2>/dev/null | grep -q "universal binary"; then
+                BUILD_PY="$CAND"
+                break
+            fi
+            # 非 universal 也接受，但要记住这一点
+            [ -z "$BUILD_PY" ] && BUILD_PY="$CAND"
+        fi
+    done
+else
+    BUILD_PY="$HEALTH_FLOAT_BUILD_PYTHON"
+fi
+
+if [ -z "$BUILD_PY" ]; then
+    echo "❌ 未找到可用的 Python 3（带 tkinter）。"
+    echo "   brew install python-tk   或安装 https://www.python.org/downloads/"
     exit 1
+fi
+if ! "$BUILD_PY" -c "import PyInstaller" >/dev/null 2>&1; then
+    echo "❌ 缺少 PyInstaller。执行： $BUILD_PY -m pip install pyinstaller pillow"
+    exit 1
+fi
+ARCH=$(file "$BUILD_PY" 2>/dev/null | grep -o "universal binary" || echo "单架构")
+echo "    构建器 $BUILD_PY  ($ARCH)"
+
+# 目标架构：默认 universal2（Intel Mac + Apple Silicon 通用）。
+# 只有构建器本身是 universal2 时才敢这么做，否则会失败。
+TARGET_ARCH=""
+if [ "$ARCH" = "universal binary" ]; then
+    TARGET_ARCH="universal2"
+    echo "    目标架构 universal2（Intel + Apple Silicon 通用）"
+else
+    echo "    ⚠ 构建器不是 universal2，只能出单架构包"
+    echo "      想要通用包：装 python.org 官方版 Python（自带 universal2）"
+fi
+
+# zsh 的 ${var:+word} 不会按 word 拆词，用数组传参更可靠
+ARCH_ARGS=()
+if [ -n "$TARGET_ARCH" ]; then
+    ARCH_ARGS=(--target-arch "$TARGET_ARCH")
 fi
 
 VER="$(grep -m1 '^VERSION = ' health_float.py | sed 's/.*"\(.*\)".*/\1/')"
@@ -71,15 +117,28 @@ STAMP="$(date +%H%M%S)"
 BUILD_DIR="$ABS_DIR/.build/v${VER}-$STAMP"
 mkdir -p "$BUILD_DIR"
 # --add-data 的源路径必须是绝对路径（specpath 会改变相对路径的解析基准）
-"$BUILD_PY" -m PyInstaller \
-    --noconfirm --windowed \
-    --name "$APP_NAME" \
-    --distpath "$BUILD_DIR/dist" \
-    --workpath "$BUILD_DIR/work" \
-    --specpath "$BUILD_DIR" \
-    --add-data "$ABS_DIR/assets:assets" \
-    --osx-bundle-identifier com.nancy.healthfloat \
-    "$ABS_DIR/health_float.py"
+if [ -n "$TARGET_ARCH" ]; then
+    "$BUILD_PY" -m PyInstaller \
+        --noconfirm --windowed \
+        --name "$APP_NAME" \
+        --distpath "$BUILD_DIR/dist" \
+        --workpath "$BUILD_DIR/work" \
+        --specpath "$BUILD_DIR" \
+        --add-data "$ABS_DIR/assets:assets" \
+        --osx-bundle-identifier com.nancy.healthfloat \
+        --target-arch "$TARGET_ARCH" \
+        "$ABS_DIR/health_float.py"
+else
+    "$BUILD_PY" -m PyInstaller \
+        --noconfirm --windowed \
+        --name "$APP_NAME" \
+        --distpath "$BUILD_DIR/dist" \
+        --workpath "$BUILD_DIR/work" \
+        --specpath "$BUILD_DIR" \
+        --add-data "$ABS_DIR/assets:assets" \
+        --osx-bundle-identifier com.nancy.healthfloat \
+        "$ABS_DIR/health_float.py"
+fi
 
 # 把产物复制到 dist/（用 ditto 覆盖，不做批量删除）
 mkdir -p "$ABS_DIR/dist"
@@ -90,7 +149,7 @@ APP="$ABS_DIR/dist/$APP_NAME.app"
 if [ -f "$ICON_DIR/icon.png" ]; then
     # 生成 .icns（macOS 图标格式）
     ICONSET="$ICON_DIR/icon.iconset"
-    rm -rf "$ICONSET"; mkdir -p "$ICONSET"
+    mkdir -p "$ICONSET"
     for S in 16 32 64 128 256 512; do
         sips -z $S $S "$ICON_DIR/icon.png" --out "$ICONSET/icon_${S}x${S}.png" >/dev/null 2>&1
         D=$((S*2))

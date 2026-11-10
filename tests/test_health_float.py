@@ -222,6 +222,28 @@ class TestApp(unittest.TestCase):
         img = self.app.cv.bbox(self.app.img_id)
         self.assertGreaterEqual(gb[1], img[3], "齿轮压到图上了")
 
+    def test_gear_stays_inside_window(self):
+        """齿轮和它的底板都必须在窗口内，不能溢出右边"""
+        for _ in range(5):        # 多次 layout，捕捉累积漂移
+            self.app._layout()
+        for iid in (self.app.gear_id, self.app.gear_bg):
+            bb = self.app.cv.bbox(iid)
+            self.assertIsNotNone(bb)
+            self.assertLessEqual(bb[2], self.app.w,
+                                 f"齿轮超出窗口右边: {bb} vs {self.app.w}")
+            self.assertLessEqual(bb[3], self.app.h,
+                                 f"齿轮超出窗口下边: {bb} vs {self.app.h}")
+            self.assertGreaterEqual(bb[0], 0)
+            self.assertGreaterEqual(bb[1], 0)
+
+    def test_gear_position_stable_across_layouts(self):
+        """反复 layout 后齿轮位置不能漂移（move 是相对位移，容易累积）"""
+        before = self.app.cv.bbox(self.app.gear_id)
+        for _ in range(5):
+            self.app._layout()
+        after = self.app.cv.bbox(self.app.gear_id)
+        self.assertEqual(before, after, "齿轮位置在多次 layout 后漂移了")
+
     def test_gear_visible_in_alert_card(self):
         """提醒卡状态下齿轮也要在（不然用户没法在提醒时改设置）"""
         self.app.next_run["water"] = datetime.now() - timedelta(seconds=1)

@@ -572,12 +572,12 @@ class FloatApp:
         cv.coords(self.name_id, w / 2, BUBBLE_IMG[1] + 34)
         # —— 可见入口：齿轮在文字条右下角（不压图），会议模式指示在左上 ——
         self._show(self.gear_id, self.gear_bg)
-        cv.coords(self.gear_id, w - 16, BUBBLE_IMG[1] + 24)
-        gb = self.cv.bbox(self.gear_bg)
-        if gb:
-            self.cv.move(self.gear_bg,
-                         (w - 16) - self.cv.bbox(self.gear_id)[0],
-                         (BUBBLE_IMG[1] + 24) - gb[1])
+        # 圆角多边形的 coords 要给完整点集（move 是相对位移，
+        # 反复 layout 会累积漂移）；用绝对坐标一次性定位
+        gx, gy = w - 18, BUBBLE_IMG[1] + 22
+        cv.coords(self.gear_id, gx, gy)
+        cv.coords(self.gear_bg, *round_rect_pts(gx - 13, gy - 13,
+                                                  gx + 13, gy + 13, 7))
         if self.cfg.get("meeting_mode"):
             self._show(self.mute_id)
             cv.coords(self.mute_id, 14, BUBBLE_IMG[1] + 12)
@@ -602,12 +602,10 @@ class FloatApp:
         self._hide(self.time_id, self.name_id)
         # 提醒卡状态下齿轮挪到面板右下角，始终可点
         self._show(self.gear_id, self.gear_bg)
-        cv.coords(self.gear_id, PANEL[2] - 14, PANEL[3] - 14)
-        gb = cv.bbox(self.gear_bg)
-        if gb:
-            cv.move(self.gear_bg,
-                    (PANEL[2] - 14) - cv.bbox(self.gear_id)[0],
-                    (PANEL[3] - 14) - gb[1])
+        gx, gy = PANEL[2] - 16, PANEL[3] - 16
+        cv.coords(self.gear_id, gx, gy)
+        cv.coords(self.gear_bg, *round_rect_pts(gx - 13, gy - 13,
+                                                  gx + 13, gy + 13, 7))
         self._show(self.icon_id)
         cv.itemconfig(self.icon_id, font=ui_font(26))
         cv.coords(self.icon_id,
