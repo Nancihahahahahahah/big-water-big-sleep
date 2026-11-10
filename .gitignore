@@ -8,7 +8,7 @@ config.local.json
 config.json
 *.tmp
 
-# 构建产物
+# 构建产物（图标本体在 assets/app-icon.png，已入库）
 .build/
 dist/
 build/

@@ -22,29 +22,35 @@ OUT="dist"
 APP_NAME="Health Float"
 
 echo "==> 检查构建环境"
-# 优先用 universal2（Intel + Apple Silicon 通用）的 Python，
-# 否则打出来的 app 只能在一种架构上跑。
-if [ -z "$HEALTH_FLOAT_BUILD_PYTHON" ]; then
-    for CAND in /usr/local/bin/python3 \
+# 选解释器的规则（按优先级）：
+#   1. HEALTH_FLOAT_BUILD_PYTHON（显式指定，最高优先）
+#   2. PATH 里的 python3 —— CI 上 setup-python 装的就是它，依赖已就位
+#   3. universal2 的候选（Intel + Apple Silicon 通用）
+# 硬性要求：必须同时能 import tkinter 和 PyInstaller。
+# （只检查 tkinter 会挑到系统 Python —— 它有 tkinter 但没 PyInstaller）
+if [ -n "$HEALTH_FLOAT_BUILD_PYTHON" ]; then
+    BUILD_PY="$HEALTH_FLOAT_BUILD_PYTHON"
+else
+    BUILD_PY=""
+    for CAND in python3 \
+                /usr/local/bin/python3 \
                 /Library/Frameworks/Python.framework/Versions/Current/bin/python3 \
-                python3 /opt/homebrew/bin/python3; do
-        if command -v "$CAND" >/dev/null 2>&1 && \
-           "$CAND" -c "import tkinter; tkinter.Tk().destroy()" >/dev/null 2>&1; then
-            if file "$CAND" 2>/dev/null | grep -q "universal binary"; then
-                BUILD_PY="$CAND"
-                break
-            fi
-            # 非 universal 也接受，但要记住这一点
-            [ -z "$BUILD_PY" ] && BUILD_PY="$CAND"
+                /opt/homebrew/bin/python3; do
+        command -v "$CAND" >/dev/null 2>&1 || continue
+        "$CAND" -c "import tkinter, PyInstaller; tkinter.Tk().destroy()" \
+            >/dev/null 2>&1 || continue
+        BUILD_PY="$CAND"
+        # universal2 优先：能出 Intel + Apple Silicon 通用的包
+        if file "$CAND" 2>/dev/null | grep -q "universal binary"; then
+            break
         fi
     done
-else
-    BUILD_PY="$HEALTH_FLOAT_BUILD_PYTHON"
 fi
 
 if [ -z "$BUILD_PY" ]; then
-    echo "❌ 未找到可用的 Python 3（带 tkinter）。"
-    echo "   brew install python-tk   或安装 https://www.python.org/downloads/"
+    echo "❌ 未找到同时具备 tkinter 和 PyInstaller 的 Python。"
+    echo "   pip install pyinstaller pillow"
+    echo "   （或用 HEALTH_FLOAT_BUILD_PYTHON=/path/to/python3 指定）"
     exit 1
 fi
 if ! "$BUILD_PY" -c "import PyInstaller" >/dev/null 2>&1; then
@@ -77,7 +83,12 @@ echo "    版本 v${VER}  构建器 $BUILD_PY"
 echo "==> 准备图标"
 ICON_DIR="build_assets"
 mkdir -p "$ICON_DIR"
-# 用 Python 生成一个简洁图标（舷窗：圆角方 + 蓝天 + 白云）
+# 优先用仓库里已提交的图标（assets/app-icon.png，跟 Linux 打包共用同一份）；
+# 没有才用 Pillow 现场生成一个。
+if [ -f "assets/app-icon.png" ]; then
+    cp "assets/app-icon.png" "$ICON_DIR/icon.png"
+    echo "    使用仓库内图标 assets/app-icon.png"
+else
 "$BUILD_PY" - <<'PYEOF'
 import os
 try:
@@ -109,6 +120,7 @@ d.rounded_rectangle([120, S-260, S-120, S-120], radius=60, fill=(178, 189, 196, 
 im.save("build_assets/icon.png")
 print("    图标已生成")
 PYEOF
+fi
 
 echo "==> PyInstaller 打包（--windowed 无终端窗口）"
 ABS_DIR="$(cd "$(dirname "$0")" && pwd)"

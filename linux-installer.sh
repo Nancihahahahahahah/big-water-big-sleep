@@ -52,9 +52,13 @@ Terminal=false
 Categories=Utility;
 EOF
 
-# 图标
-if [ -f build_assets/icon.png ]; then
-    cp build_assets/icon.png "$APPDIR/healthfloat.png"
+# 图标（appimagetool 强制要求 Icon= 指向的文件真实存在）
+ICON_SRC="assets/app-icon.png"
+if [ -f "$ICON_SRC" ]; then
+    cp "$ICON_SRC" "$APPDIR/healthfloat.png"
+else
+    echo "[!] 找不到图标 $ICON_SRC，AppImage 会生成失败"
+    exit 1
 fi
 
 # AppDir 内的启动脚本
