@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import tkinter as tk
 from datetime import datetime, timedelta
 
@@ -513,6 +514,9 @@ class FloatApp:
                                   BUBBLE[0] - 3, BUBBLE_IMG[1] + 36, 8,
                                   fill=C_PANEL, outline="#dde3ea",
                                   tags=("gear",))
+        # 底板必须压在齿轮图标下面：后创建的画布元素层级更高，
+        # 不降序的话白底板会把 ⚙ 完全盖住（只剩一个白色方块）。
+        cv.tag_lower(self.gear_bg, self.gear_id)
         self.mute_id = cv.create_text(
             0, 0, text="🔇", font=ui_font(11), fill="#c8802f",
             tags=("mute",), state="hidden")
@@ -807,6 +811,9 @@ class FloatApp:
         self.black_left = secs
         self._bo_exts = 0                      # 鼠标活动延长次数
         self._bo_persist = (kind == "long")    # 洗澡/睡觉：鼠标还在动就继续黑
+        self._bo_last_extend = 0.0             # 上次延长的时刻（时间节流）
+        self._bo_total = 0                    # 累计黑屏秒数（总时长上限）
+        self._bo_msg_until = 0.0              # 「还在工作」提示显示到何时
 
         bw = tk.Toplevel(self.root)
         self.blackout = bw
@@ -841,29 +848,74 @@ class FloatApp:
             if self._bo_persist:
                 w.bind("<Motion>", self._on_bo_motion, add="+")
         self.bo_count.config(text=f"{secs} 秒后回来")
+        self._bo_last_pos = self._pointer_pos()
         self.root.after(1000, self._bo_tick)
         bw.lift()
         # 刻意不调用 focus_force()：那会把键盘焦点从用户正在输入的
         # 窗口抢走，导致正在打的字丢失。遮罩只做视觉+鼠标层面的强制。
 
-    def _on_bo_motion(self, e):
+    def _pointer_pos(self):
+        """当前鼠标在屏幕上的坐标（用于检测「还在动鼠标」）"""
+        try:
+            return self.blackout.winfo_pointerxy()
+        except Exception:
+            return (0, 0)
+
+    def _extend_blackout(self):
+        """重置黑屏倒计时（鼠标还在动 = 人还在工作）。返回是否真的延长了。"""
         if not (self.blackout and self.blackout.winfo_exists()):
-            return
-        if self._bo_exts >= 30:      # 安全阀：最多延长 30 次，防永久锁屏
-            return
+            return False
+        if not self._bo_persist:
+            return False
+        now = time.monotonic()
+        # 节流：距上次延长至少 1.5 秒才算一次，避免高频事件刷屏
+        if now - self._bo_last_extend < 1.5:
+            return False
+        # 总时长上限：累计黑屏不超过 5 分钟，绝不把人锁死
+        secs = self._blackout_for(self.current)
+        if self._bo_total + secs > 300:
+            self.bo_count.config(text="已经提醒很久啦 · 点一下关闭")
+            return False
+        self._bo_last_extend = now
         self._bo_exts += 1
-        self.black_left = self._blackout_for(self.current)
-        self.bo_count.config(text="检测到你还在工作 · 继续黑屏休息")
+        self._bo_total += secs
+        self.black_left = secs
+        self._bo_msg_until = now + 3      # 提示文字保持 3 秒
+        return True
+
+    def _on_bo_motion(self, e):
+        """鼠标在遮罩上移动 = 人还在工作 → 重置黑屏倒计时。
+
+        关键：不能用「事件次数」当安全阀。
+        Tk 的 <Motion> 在鼠标移动时每秒能触发几十次，用次数计数的话
+        不到 1 秒就把额度烧完，之后怎么动鼠标都不再延长（用户实测反馈）。
+        改为「时间节流 + 累计黑屏总时长上限」。
+        """
+        self._extend_blackout()
 
     def _bo_tick(self):
         if not (self.blackout and self.blackout.winfo_exists()):
             return
-        if self.black_left > 0:
-            self.black_left -= 1
-            self.bo_count.config(text=f"{max(self.black_left, 0)} 秒后回来")
+        # 鼠标位置轮询：比 <Motion> 事件更可靠
+        # （无边框顶层窗口在某些情况下收不到 Motion，但坐标一定变）
+        extended = False
+        if self._bo_persist:
+            pos = self._pointer_pos()
+            if pos != self._bo_last_pos:
+                self._bo_last_pos = pos
+                extended = self._extend_blackout()
+        # 延长成功时这一拍不再递减（否则刚重置就被吃掉 1 秒）
+        if not extended:
+            if self.black_left > 0:
+                self.black_left -= 1
         if self.black_left <= 0:
             self._close_blackout()
             return
+        # 「还在工作」的提示保持几秒，别被倒计时立刻盖掉
+        if time.monotonic() < self._bo_msg_until:
+            self.bo_count.config(text="检测到你还在工作 · 继续黑屏休息")
+        else:
+            self.bo_count.config(text=f"{max(self.black_left, 0)} 秒后回来")
         self.root.after(1000, self._bo_tick)
 
     def _close_blackout(self):

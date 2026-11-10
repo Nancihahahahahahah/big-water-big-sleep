@@ -412,15 +412,35 @@ class TestApp(unittest.TestCase):
         self.assertEqual(self.app.black_left, 10, "鼠标活动应重置倒计时")
         self.assertEqual(self.app._bo_exts, 1)
 
-    def test_blackout_extension_safety_cap(self):
-        """延长次数上限，防止永久锁屏"""
+    def test_blackout_motion_throttled(self):
+        """高频 Motion 事件不应烧掉延长额度（1.5s 节流）"""
         self.app.cfg["blackout_seconds"] = 10
         self.app.next_run["sleep"] = datetime.now() - timedelta(seconds=1)
         self.app._tick_step()
-        self.app._bo_exts = 30
-        before = self.app.black_left
-        self.app._on_bo_motion(None)
-        self.assertEqual(self.app.black_left, before, "超过上限不应再延长")
+        # 模拟鼠标疯狂移动：连续 100 次 Motion（间隔 < 1.5s）
+        for _ in range(100):
+            self.app._on_bo_motion(None)
+        # 节流生效：只算了 1 次延长
+        self.assertEqual(self.app._bo_exts, 1, "1.5 秒内的高频事件应被节流")
+
+    def test_blackout_extension_safety_cap(self):
+        """累计黑屏超过 5 分钟后不再延长，防止永久锁屏"""
+        self.app.cfg["blackout_seconds"] = 10
+        self.app.next_run["sleep"] = datetime.now() - timedelta(seconds=1)
+        self.app._tick_step()
+        self.app._bo_total = 295          # 已累计 295 秒
+        self.app._bo_last_extend = 0.0    # 允许延长（节流不拦）
+        ok = self.app._extend_blackout()
+        self.assertFalse(ok, "累计超 5 分钟不应再延长")
+        self.assertLess(self.app._bo_total + 10, 306)  # 上限语义自检
+
+    def test_gear_icon_above_bg(self):
+        """⚙ 图标必须在白色底板之上（否则只剩一个白色方块）"""
+        below = self.app.cv.find_below(self.app.gear_id)
+        if isinstance(below, tuple):      # 部分 Tk 版本返回 1 元组
+            below = below[0] if below else None
+        self.assertEqual(below, self.app.gear_bg,
+                         "gear_id 正下方必须是 gear_bg（图标可见）")
 
     def test_blackout_click_skips(self):
         self.app.cfg["blackout_seconds"] = 10
