@@ -2,5 +2,14 @@ __pycache__/
 *.pyc
 .DS_Store
 float.log
+*.log
 Health Float.app/
 config.local.json
+config.json
+*.tmp
+
+# 构建产物
+.build/
+dist/
+build/
+build_assets/

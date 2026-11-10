@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 1.2.0）'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS App
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyinstaller pillow
+      - run: ./build_macos_app.sh
+      - name: Make DMG
+        run: |
+          hdiutil create -volname "Health Float" -srcfolder "dist/Health Float.app" -ov -format UDZO "dist/Health Float.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HealthFloat-macOS
+          path: dist/Health Float.dmg
+
+  windows:
+    name: Windows exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyinstaller
+      - name: Build
+        shell: bash
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed \
+            --name "Health Float" --distpath dist --workpath build --specpath build \
+            --add-data "$(pwd)/assets;assets" health_float.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HealthFloat-Windows
+          path: dist/Health Float.exe
+
+  linux:
+    name: Linux AppImage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyinstaller
+      - name: Build onefile
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile \
+            --name "Health Float" --distpath dist --workpath build --specpath build \
+            --add-data "$(pwd)/assets:assets" health_float.py
+      - name: Build AppImage
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils fuse libfuse2
+          chmod +x linux-installer.sh
+          ./linux-installer.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HealthFloat-Linux
+          path: dist/*.AppImage
+
+  release:
+    name: Publish GitHub Release
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect files
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' \) -exec mv {} release/ \;
+          ls -lh release/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          body: |
+            ## 🌿 大水大睡大健康 — Health Float
+
+            下载对应你系统的版本，**双击即用，不需要装 Python**。
+
+            | 系统 | 文件 | 说明 |
+            |------|------|------|
+            | macOS | `Health Float.dmg` | 拖进「应用程序」，双击运行 |
+            | Windows | `Health Float.exe` | 双击运行 |
+            | Linux | `Health Float.AppImage` | `chmod +x` 后双击运行 |
+
+            ### 第一次使用
+            1. 双击打开
+            2. 首次会弹出设置窗口，**用上下箭头**选好洗澡和睡觉时间
+            3. 想开机自动运行（macOS）：系统设置 → 通用 → 登录项 → 添加 Health Float.app
+
+            ### 找不到设置？
+            点舷窗**右下角的 ⚙ 齿轮**，或**右键舷窗**打开快捷菜单。

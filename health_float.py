@@ -17,15 +17,76 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tkinter as tk
 from datetime import datetime, timedelta
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+def _base_dir():
+    """程序根目录。
+
+    源码运行时 = 脚本所在目录；
+    PyInstaller 打包后 = sys._MEIPASS（解包后的资源目录），
+    否则素材（舷窗图）会找不到，浮窗会开成白板。
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return meipass
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+BASE_DIR = _base_dir()
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 SOUND = "/System/Library/Sounds/Ping.aiff"
+
+VERSION = "1.2.0"
+
+# 两次 tick 间隔超过这个秒数，判定为「电脑睡过了」，醒来的过期提醒静默重排
+MAX_RESUME_GAP = 300
+
+
+def user_config_dir():
+    """用户配置目录（各平台标准位置），跟程序安装目录分离。
+
+    配置放这里的原因：程序目录可能被覆盖升级（打包 .app / git pull /
+    重装），用户设置不能跟着一起没。
+    """
+    if sys.platform == "darwin":
+        base = os.path.join(os.path.expanduser("~"), "Library",
+                            "Application Support", "HealthFloat")
+    elif os.name == "nt":
+        base = os.path.join(os.environ.get("APPDATA",
+                     os.path.expanduser("~")), "HealthFloat")
+    else:
+        base = os.path.join(os.environ.get("XDG_CONFIG_HOME",
+                     os.path.expanduser("~/.config")), "health-float")
+    try:
+        os.makedirs(base, exist_ok=True)
+    except OSError:
+        base = BASE_DIR
+    return base
+
+
+USER_DIR = user_config_dir()
+CONFIG_PATH = os.path.join(USER_DIR, "config.json")
+LEGACY_CONFIG_PATH = os.path.join(BASE_DIR, "config.json")   # 老版本位置（程序目录）
+
+
+def migrate_legacy_config():
+    """老版本把配置存在程序目录：迁移到用户目录，只迁一次。"""
+    if os.path.abspath(LEGACY_CONFIG_PATH) == os.path.abspath(CONFIG_PATH):
+        return
+    if os.path.exists(CONFIG_PATH) or not os.path.exists(LEGACY_CONFIG_PATH):
+        return
+    try:
+        with open(LEGACY_CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"[health-float] 已把旧配置迁移到 {CONFIG_PATH}")
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[health-float] 旧配置迁移失败（忽略）: {e}")
 
 DEFAULT_CONFIG = {
     "eye_minutes": 20,          # 每 N 分钟：看远方（0 = 关闭）
@@ -52,13 +113,14 @@ SETT_ITEMS = [
     ("blackout_seconds", "洗澡/睡觉黑屏 🖥", "先黑屏几秒（0=关）", "int"),
     ("blackout_brief_seconds", "眺望/站立黑屏 🌑", "先黑屏几秒（0=关）", "int"),
     ("meeting_mode", "会议模式 🎙", "开启后提醒永不黑屏", "bool"),
-    ("sound", "提示音 🔔", "提醒时播放提示音", "bool"),
+    ("sound", "提示音 🔔", "关掉就是静音模式", "bool"),
 ]
 
 
 # ---------------- 工具函数 ----------------
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
+    migrate_legacy_config()
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -70,9 +132,13 @@ def load_config():
 
 
 def save_config(cfg):
+    """保存配置：先写临时文件再原子替换，避免写一半断电损坏配置。"""
     try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        tmp = CONFIG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, CONFIG_PATH)
         return True
     except OSError as e:
         print(f"[health-float] 配置保存失败: {e}")
@@ -264,6 +330,16 @@ class SettingsDialog(tk.Toplevel):
             tk.Label(row, text=hint, font=ui_font(8), bg="#ffffff",
                      fg=C_DIM).pack(side="left", padx=(10, 0))
 
+        # —— 使用说明：让用户知道还有哪些入口 ——
+        help_box = tk.Frame(self, bg="#f4f6f9")
+        help_box.pack(fill="x", padx=22, pady=(12, 0))
+        tk.Label(help_box,
+                 text="⚙ 点舷窗右下角齿轮  ·  右键舷窗 = 快捷菜单\n"
+                      "🎙 会议模式（不黑屏）  ·  🔕 静音模式（只弹窗不出声）\n"
+                      "间隔填 0 = 关闭该提醒  ·  时间留空 = 不提醒",
+                 font=ui_font(8), bg="#f4f6f9", fg=C_DIM,
+                 justify="left", anchor="w").pack(padx=12, pady=10, fill="x")
+
         btns = tk.Frame(self, bg="#ffffff")
         btns.pack(pady=(14, 18))
         ok = tk.Label(btns, text="保存 ✓", font=ui_font(11, True),
@@ -333,6 +409,7 @@ class FloatApp:
         self.blackout = None
         self.black_left = 0
         self.settings_win = None
+        self._last_tick = None     # 上次 tick 时间（用于休眠唤醒检测）
         self.next_run = self._build_schedule()
         self.images = self._load_images()
 
@@ -361,7 +438,7 @@ class FloatApp:
         self.cv.bind("<B1-Motion>", self._drag_move, add="+")
         self.cv.bind("<Double-Button-1>",
                      lambda e: self._open_settings(), add="+")
-        self.cv.bind("<Button-3>", self._toggle_meeting, add="+")
+        self.cv.bind("<Button-3>", self._show_menu, add="+")
         self.cv.bind("<Enter>", lambda e: self._set_hover(True), add="+")
         self.cv.bind("<Leave>", lambda e: self._set_hover(False), add="+")
 
@@ -426,6 +503,23 @@ class FloatApp:
                                       fill=C_TEXT)
         self.name_id = cv.create_text(0, 0, text="", font=ui_font(8),
                                       fill=C_DIM)
+        # —— 可见入口：设置齿轮 + 会议模式指示 ——
+        # 之前只有隐藏手势（双击/右键），用户根本不知道它们存在。
+        # 现在把入口画出来，点了就开设置面板。
+        self.gear_id = cv.create_text(
+            BUBBLE[0] - 16, BUBBLE_IMG[1] + 24, text="⚙", font=ui_font(13),
+            fill=C_DIM, tags=("gear",))
+        self.gear_bg = round_rect(cv, BUBBLE[0] - 29, BUBBLE_IMG[1] + 12,
+                                  BUBBLE[0] - 3, BUBBLE_IMG[1] + 36, 8,
+                                  fill=C_PANEL, outline="#dde3ea",
+                                  tags=("gear",))
+        self.mute_id = cv.create_text(
+            0, 0, text="🔇", font=ui_font(11), fill="#c8802f",
+            tags=("mute",), state="hidden")
+        # 静音指示：🔕 表示「提醒照弹，但不出声」
+        self.silent_id = cv.create_text(
+            0, 0, text="🔕", font=ui_font(11), fill=C_DIM,
+            tags=("silent",), state="hidden")
         # 提醒卡右栏（白色圆角面板）
         self.panel_id = round_rect(cv, *PANEL, 10, fill=C_PANEL,
                                    outline="#dde3ea")
@@ -443,6 +537,8 @@ class FloatApp:
                                         fill=C_DIM)
         cv.tag_bind("btn", "<Button-1>", lambda e: self._dismiss())
         cv.tag_bind("a_btn_txt", "<Button-1>", lambda e: self._dismiss())
+        # 齿轮：可见的设置入口，点了直接开面板
+        cv.tag_bind("gear", "<Button-1>", lambda e: self._open_settings())
 
     def _hide(self, *ids):
         for i in ids:
@@ -474,6 +570,27 @@ class FloatApp:
         # 文字条在图片下方（y >= 193），与图物理隔离，行距舒展
         cv.coords(self.time_id, w / 2, BUBBLE_IMG[1] + 12)
         cv.coords(self.name_id, w / 2, BUBBLE_IMG[1] + 34)
+        # —— 可见入口：齿轮在文字条右下角（不压图），会议模式指示在左上 ——
+        self._show(self.gear_id, self.gear_bg)
+        cv.coords(self.gear_id, w - 16, BUBBLE_IMG[1] + 24)
+        gb = self.cv.bbox(self.gear_bg)
+        if gb:
+            self.cv.move(self.gear_bg,
+                         (w - 16) - self.cv.bbox(self.gear_id)[0],
+                         (BUBBLE_IMG[1] + 24) - gb[1])
+        if self.cfg.get("meeting_mode"):
+            self._show(self.mute_id)
+            cv.coords(self.mute_id, 14, BUBBLE_IMG[1] + 12)
+        else:
+            self._hide(self.mute_id)
+        # 静音指示（🔕）：提醒照弹，只是不出声
+        if not self.cfg.get("sound", True):
+            self._show(self.silent_id)
+            cv.coords(self.silent_id,
+                      14 if not self.cfg.get("meeting_mode") else 32,
+                      BUBBLE_IMG[1] + 12)
+        else:
+            self._hide(self.silent_id)
         self._update_countdown()
 
     def _layout_alert(self):
@@ -483,6 +600,14 @@ class FloatApp:
         ix, iy = ALERT_IMG_XY
         self._show(self.panel_id)   # 面板位置固定，创建时已定，无需重设坐标
         self._hide(self.time_id, self.name_id)
+        # 提醒卡状态下齿轮挪到面板右下角，始终可点
+        self._show(self.gear_id, self.gear_bg)
+        cv.coords(self.gear_id, PANEL[2] - 14, PANEL[3] - 14)
+        gb = cv.bbox(self.gear_bg)
+        if gb:
+            cv.move(self.gear_bg,
+                    (PANEL[2] - 14) - cv.bbox(self.gear_id)[0],
+                    (PANEL[3] - 14) - gb[1])
         self._show(self.icon_id)
         cv.itemconfig(self.icon_id, font=ui_font(26))
         cv.coords(self.icon_id,
@@ -557,24 +682,58 @@ class FloatApp:
 
     def _tick_step(self):
         now = datetime.now()
+        # —— 休眠/唤醒检测 ——
+        # 电脑合盖睡几小时后，所有提醒都过期了。若不处理，醒来会被
+        # 5 条过期提醒连环轰炸（还各带一次黑屏），等于惩罚用户去睡觉。
+        # 规则：距上次 tick 超过 MAX_GAP 秒 → 判定为休眠，期间错过的
+        # 提醒直接重排到未来，不弹窗。
+        resumed = False
+        if self._last_tick is not None:
+            gap = (now - self._last_tick).total_seconds()
+            if gap > MAX_RESUME_GAP:
+                resumed = True
+        self._last_tick = now
+
         for key, t in list(self.next_run.items()):
             if now >= t:
-                self.queue.append(key)
                 kind, param = self.reschedule[key]
                 if kind == "daily":
                     self.next_run[key] = next_daily(*param)
                 else:
                     self.next_run[key] = now + param
+                # 休眠唤醒后的过期提醒：静默重排，不惊扰
+                if resumed:
+                    continue
+                # 单个提醒超时太久：静默跳过
+                #   间隔型：超过自身间隔的 2 倍
+                #   每日型：超过 2 小时（错过了就等明天，不补弹）
+                if kind == "daily":
+                    if (now - t).total_seconds() > 7200:
+                        continue
+                elif (now - t).total_seconds() > param.total_seconds() * 2:
+                    continue
+                self.queue.append(key)
 
         if self.current is None and self.queue:
             self.current = self.queue.pop(0)
             self.auto_left = ALERT_META[self.current][3]
-            self._play_sound()
             secs = self._blackout_for(self.current)
+            # 提示音的唯一决策点：
+            #   静音模式 → 永远不响
+            #   有黑屏   → 黑屏本身就是提示，不叠加"叮"（更安静）
+            #   无黑屏   → 用提示音把人叫醒
+            if secs <= 0 and self.cfg.get("sound", True):
+                self._play_sound()
             if secs > 0:
                 self._show_blackout(self.current, secs)
             self._resize_to(*ALERT)
             self._layout()
+            # 提醒弹出的这一刻才真正抢层级（此时用户本就该看到它）
+            try:
+                self.root.lift()
+                self.root.attributes("-topmost", True)
+            except tk.TclError:
+                pass
 
         if self.current is not None:
             if self.auto_left > 0:
@@ -590,7 +749,14 @@ class FloatApp:
             self.prewarn = new_prewarn
             self._update_countdown()
 
-        self.root.lift()
+        # 置顶维护：不要每秒 lift()（会打断全屏演示/视频播放）。
+        # 改为低频重申 -topmost 属性，必要时才真正提层。
+        self._topmost_ticks = getattr(self, "_topmost_ticks", 0) + 1
+        if self._topmost_ticks % 30 == 0:
+            try:
+                self.root.attributes("-topmost", True)
+            except tk.TclError:
+                pass
 
     def _blackout_for(self, key):
         """该提醒的黑屏秒数（会议模式下恒为 0）"""
@@ -679,7 +845,8 @@ class FloatApp:
         self.bo_count.config(text=f"{secs} 秒后回来")
         self.root.after(1000, self._bo_tick)
         bw.lift()
-        bw.focus_force()
+        # 刻意不调用 focus_force()：那会把键盘焦点从用户正在输入的
+        # 窗口抢走，导致正在打的字丢失。遮罩只做视觉+鼠标层面的强制。
 
     def _on_bo_motion(self, e):
         if not (self.blackout and self.blackout.winfo_exists()):
@@ -713,10 +880,36 @@ class FloatApp:
             self.settings_win.focus_force()
             return self.settings_win
         dlg = SettingsDialog(self.root, self.cfg,
-                             intro="双击浮窗随时能回到这里修改")
+                             intro="这里改所有提醒时间 · 保存立即生效")
         dlg.on_saved = self._apply_settings
         self.settings_win = dlg
         return dlg
+
+    def _show_menu(self, e):
+        """右键菜单：把所有能力显式列出来，不再依赖隐藏手势"""
+        menu = tk.Menu(self.root, tearoff=0,
+                       font=ui_font(10), bg="#ffffff", fg=C_TEXT,
+                       activebackground="#e9edf2", relief="flat")
+        menu.add_command(label="⚙  打开设置…",
+                         command=self._open_settings)
+        meeting = "🔇  会议模式：开（不黑屏）" if self.cfg.get("meeting_mode") \
+            else "🎙  会议模式：关"
+        menu.add_command(label=meeting, command=self._toggle_meeting)
+        silent = "🔕  静音模式：开（只弹窗不出声）" \
+            if not self.cfg.get("sound", True) else "🔔  静音模式：关（有提示音）"
+        menu.add_command(label=silent, command=self._toggle_silent)
+        menu.add_separator()
+        menu.add_command(label="✕  退出", command=self._quit)
+        try:
+            menu.tk_popup(e.x_root, e.y_root)
+        finally:
+            menu.grab_release()
+
+    def _quit(self):
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
     def _apply_settings(self):
         self.next_run = self._build_schedule()
@@ -731,6 +924,15 @@ class FloatApp:
         self.cfg["meeting_mode"] = not bool(self.cfg.get("meeting_mode"))
         save_config(self.cfg)
         self._update_countdown()
+        if not self.current:
+            self._layout()          # 刷新 🔇 指示的显隐
+
+    def _toggle_silent(self, e=None):
+        """静音模式：提醒照弹，只是不出声（开会/图书馆/怕吵到别人）"""
+        self.cfg["sound"] = not bool(self.cfg.get("sound", True))
+        save_config(self.cfg)
+        if not self.current:
+            self._layout()          # 刷新 🔕 指示的显隐
 
     def _set_hover(self, on):
         self.hover = on
@@ -752,17 +954,34 @@ class FloatApp:
         self._update_countdown()
 
     def _play_sound(self):
-        if not self.cfg.get("sound") or sys.platform != "darwin":
+        """播放提示音。调用方已判断静音/黑屏，这里再兜一道底。"""
+        if not self.cfg.get("sound", True):
             return
         try:
-            subprocess.Popen(["afplay", SOUND],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except OSError:
-            pass
+            if sys.platform == "darwin":
+                subprocess.Popen(["afplay", SOUND],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+            elif os.name == "nt":
+                # Windows：winsound 是标准库，Beep 一定可用
+                import winsound
+                winsound.Beep(880, 220)
+                winsound.Beep(1320, 260)
+            else:
+                # Linux：优先 paplay / aplay，都没有就安静跳过
+                for cmd in (["paplay", SOUND], ["aplay", "-q", SOUND]):
+                    if shutil.which(cmd[0]):
+                        subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                         stderr=subprocess.DEVNULL)
+                        break
+        except Exception:
+            pass          # 声音失败绝不能影响提醒本身
 
 
 # ---------------- 入口 ----------------
 def main():
+    # 先迁移旧配置，再判断是否首次运行
+    migrate_legacy_config()
     first_run = not os.path.exists(CONFIG_PATH)
     cfg = load_config()
     root = tk.Tk()
@@ -770,10 +989,10 @@ def main():
         root.withdraw()
         dlg = SettingsDialog(
             root, cfg, title="欢迎 🌿 首次设置",
-            intro="设好时间就开始 · 以后双击浮窗随时改")
+            intro="设好时间就开始 · 以后点舷窗右下角 ⚙ 随时能改")
         dlg.on_saved = lambda: None
         root.wait_window(dlg)
-        save_config(cfg)
+        save_config(cfg)          # 用户直接关窗也会存下默认值
         root.deiconify()
         root.geometry(f"{BUBBLE[0]}x{BUBBLE[1]}+"
                       f"{root.winfo_screenwidth() - 200}+"

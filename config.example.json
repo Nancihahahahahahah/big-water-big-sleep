@@ -5,6 +5,9 @@
   "shower_time": "21:30",
   "sleep_time": "22:30",
   "prewarn_seconds": 120,
+  "blackout_seconds": 10,
+  "blackout_brief_seconds": 2,
+  "meeting_mode": false,
   "sound": true,
-  "opacity": 0.92
+  "opacity": 0.96
 }
