@@ -16,6 +16,18 @@
 
 ## 📥 怎么用（不懂技术也能用）
 
+### 📦 直接下载成品（推荐）
+
+**[⬇️ 点这里下载 v1.2.0](https://github.com/Nancihahahahahahah/big-water-big-sleep/releases/tag/v1.2.0)**
+
+| 系统 | 下载 | 大小 |
+|------|------|------|
+| **macOS**（Intel + Apple Silicon 通用） | `Health.Float.dmg` | 30 MB |
+| **Windows** | `HealthFloat-Windows.zip` | 11 MB |
+| **Linux** | `Health.Float.AppImage` | 24 MB |
+
+**完全不需要装 Python，不需要敲任何命令，不需要看教程。**
+
 ### macOS
 
 1. 下载 `Health Float.dmg`
@@ -27,9 +39,11 @@
 
 ### Windows
 
-1. 下载 `Health Float.exe`
-2. 双击运行（绿色小舷窗会出现在屏幕右下角）
+1. 下载 `HealthFloat-Windows.zip` 并解压
+2. 双击 `Health Float.exe`（绿色小舷窗会出现在屏幕右下角）
 3. 想开机自动运行：按 `Win + R`，输入 `shell:startup`，把 `Health Float.exe` 的快捷方式拖进去
+
+> 第一次运行若被 Windows Defender 拦截，点「更多信息 → 仍要运行」。
 
 ### Linux
 
@@ -37,7 +51,7 @@
 2. 终端执行 `chmod +x Health Float.AppImage`（只需一次）
 3. 双击运行
 
-> **完全不需要装 Python，不需要敲任何命令。**
+> 想看完整说明，去 [`docs/使用手册.md`](docs/使用手册.md)。
 
 ---
 
