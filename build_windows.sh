@@ -25,19 +25,29 @@ if ! "$BUILD_PY" -c "import PyInstaller, tkinter" >/dev/null 2>&1; then
 fi
 
 ABS_DIR="$(cd "$(dirname "$0")" && pwd)"
-WIN_DIR="$(cygpath -w "$ABS_DIR" 2>/dev/null || echo "$ABS_DIR")"
 
 echo "==> 打包 v${VER}"
-rm -rf build dist
+# PyInstaller 每次用全新构建目录，避免清理旧目录时出问题
+STAMP="$(date +%H%M%S)"
+BUILD_DIR="$ABS_DIR/.build/v${VER}-$STAMP"
+mkdir -p "$BUILD_DIR"
+
+# --add-data 在 Windows 上用分号分隔：源路径;目标目录
+# 用 --onedir 而非 --onefile：启动更快，且杀毒软件误报率低得多
 "$BUILD_PY" -m PyInstaller \
-    --noconfirm --clean --onefile --windowed \
+    --noconfirm --windowed \
     --name "Health Float" \
-    --distpath dist \
-    --workpath build \
-    --specpath build \
+    --distpath "$BUILD_DIR/dist" \
+    --workpath "$BUILD_DIR/work" \
+    --specpath "$BUILD_DIR" \
     --add-data "$ABS_DIR/assets;assets" \
     "$ABS_DIR/health_float.py"
 
+# 复制到 dist/
+mkdir -p "$ABS_DIR/dist"
+cp -Rf "$BUILD_DIR/dist/Health Float" "$ABS_DIR/dist/"
+
 echo ""
-echo "打包完成：dist/Health Float.exe"
+echo "打包完成：dist/Health Float/Health Float.exe"
 echo "用户双击即可运行，不需要装 Python。"
+echo "分发时请把整个 Health Float 文件夹一起打包成 zip。"

@@ -43,13 +43,16 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed \
+          python -m PyInstaller --noconfirm --windowed \
             --name "Health Float" --distpath dist --workpath build --specpath build \
             --add-data "$(pwd)/assets;assets" health_float.py
+      - name: Zip
+        shell: bash
+        run: cd dist && zip -r "../HealthFloat-Windows.zip" "Health Float"
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-Windows
-          path: dist/Health Float.exe
+          path: dist/*.zip
 
   linux:
     name: Linux AppImage
@@ -88,7 +91,7 @@ jobs:
       - name: Collect files
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' \) -exec mv {} release/ \;
+          find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' \) -exec mv {} release/ \;
           ls -lh release/
       - uses: softprops/action-gh-release@v2
         with:
@@ -102,7 +105,7 @@ jobs:
             | 系统 | 文件 | 说明 |
             |------|------|------|
             | macOS | `Health Float.dmg` | 拖进「应用程序」，双击运行 |
-            | Windows | `Health Float.exe` | 双击运行 |
+            | Windows | `HealthFloat-Windows.zip` | 解压后双击 `Health Float.exe` |
             | Linux | `Health Float.AppImage` | `chmod +x` 后双击运行 |
 
             ### 第一次使用

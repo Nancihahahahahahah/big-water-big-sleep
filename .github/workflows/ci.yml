@@ -23,12 +23,19 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # Ubuntu 需要 tkinter（python3-tk）和虚拟显示（headless X）
+      # Ubuntu 需要 tkinter 和虚拟显示（headless X）
+      # 注意：setup-python 装的是自带版本，必须用 pip 装 tkinter 绑定
+      # （apt 的 python3-tk 只对应系统 Python，对 3.9/3.13 无效）
       - name: Install system deps (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk xvfb
+          sudo apt-get install -y xvfb libtk8.6 libtcl8.6
+          # setup-python 的解释器自己找 tkinter 绑定
+          python -c "import tkinter" 2>/dev/null || \
+            sudo apt-get install -y "python${{ matrix.python }}-tk" || true
+          python -c "import tkinter; tkinter.Tk().destroy()" || \
+            (echo "tkinter 不可用，安装失败"; exit 1)
 
       - name: Run tests (Linux, headless)
         if: runner.os == 'Linux'
