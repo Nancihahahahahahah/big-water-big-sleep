@@ -18,14 +18,29 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: pip install pyinstaller pillow
-      - run: ./build_macos_app.sh
+      - name: Install universal2 Python
+        # setup-python 装的是单架构解释器，打出来的包只能跑一种芯片。
+        # python.org 官方版自带 universal2，装它才能出一包两用。
+        run: |
+          set -e
+          PY_VER="3.12.10"
+          URL="https://www.python.org/ftp/python/${PY_VER}/python-${PY_VER}-macos11.pkg"
+          curl -fsSL -o /tmp/python.pkg "$URL"
+          sudo installer -pkg /tmp/python.pkg -target /
+          /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 --version
+          file /Library/Frameworks/Python.framework/Versions/3.12/bin/python3
+      - name: Install build deps
+        run: |
+          /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 -m pip install --upgrade pip
+          /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 -m pip install pyinstaller pillow
+      - name: Build
+        run: |
+          export HEALTH_FLOAT_BUILD_PYTHON="/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"
+          ./build_macos_app.sh
       - name: Make DMG
         run: |
           hdiutil create -volname "Health Float" -srcfolder "dist/Health Float.app" -ov -format UDZO "dist/Health Float.dmg"
+          lipo -info "dist/Health Float.app/Contents/MacOS/Health Float"
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-macOS
@@ -54,10 +69,9 @@ jobs:
         shell: bash
         run: |
           # 用 Python 的 zipfile，不依赖 zip 命令（Windows runner 上不一定有）
-          cd dist
-          python -c "import shutil; shutil.make_archive('../HealthFloat-Windows','zip','.')"
-          cd ..
-          ls -lh HealthFloat-Windows.zip
+          # zip 落在 dist/ 里，才能被 upload-artifact 的 dist/*.zip 找到
+          python -c "import shutil; shutil.make_archive('dist/HealthFloat-Windows','zip','dist')"
+          ls -lh dist/*.zip
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-Windows
@@ -120,6 +134,9 @@ jobs:
         with:
           files: release/*
           generate_release_notes: true
+          # 不覆盖已存在的资产：手工上传的 universal2 DMG 优先保留，
+          # CI 出的同名文件只用于补齐缺失的平台包
+          overwrite_files: false
           # workflow_dispatch 时没有 tag，必须显式指定；
           # push tag 时用触发该次运行的 tag
           tag_name: ${{ github.event.inputs.version != '' && format('v{0}', github.event.inputs.version) || github.ref_name }}
