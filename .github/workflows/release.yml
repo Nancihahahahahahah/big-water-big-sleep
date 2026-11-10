@@ -43,12 +43,21 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          python -m PyInstaller --noconfirm --windowed \
+          # Git Bash 的 $(pwd) 是 MSYS 路径（/d/a/...），
+          # 原生 Windows Python 无法解析 —— 用 Python 自己算绝对路径
+          ASSETS="$(python -c "import os; print(os.path.abspath('assets'))")"
+          echo "assets -> $ASSETS"
+          python -m PyInstaller --noconfirm --clean --windowed \
             --name "Health Float" --distpath dist --workpath build --specpath build \
-            --add-data "$(pwd)/assets;assets" health_float.py
+            --add-data "${ASSETS};assets" health_float.py
       - name: Zip
         shell: bash
-        run: cd dist && zip -r "../HealthFloat-Windows.zip" "Health Float"
+        run: |
+          # 用 Python 的 zipfile，不依赖 zip 命令（Windows runner 上不一定有）
+          cd dist
+          python -c "import shutil; shutil.make_archive('../HealthFloat-Windows','zip','.')"
+          cd ..
+          ls -lh HealthFloat-Windows.zip
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-Windows
@@ -65,15 +74,15 @@ jobs:
       - run: pip install pyinstaller
       - name: Build onefile
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile \
-            --name "Health Float" --distpath dist --workpath build --specpath build \
-            --add-data "$(pwd)/assets:assets" health_float.py
+          echo "跳过：AppImage 走 onedir，由 linux-installer.sh 负责"
       - name: Build AppImage
         run: |
           sudo apt-get update
           sudo apt-get install -y desktop-file-utils fuse libfuse2
           chmod +x linux-installer.sh
+          # linux-installer.sh 内部自己做 onedir 打包，这里不要重复打
           ./linux-installer.sh
+          ls -lh dist/
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-Linux
