@@ -13,3 +13,4 @@ config.json
 dist/
 build/
 build_assets/
+dmg_root/
