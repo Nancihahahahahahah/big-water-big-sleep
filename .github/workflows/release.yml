@@ -94,6 +94,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 需要完整历史来创建/推送 tag
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -102,10 +104,25 @@ jobs:
           mkdir -p release
           find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' \) -exec mv {} release/ \;
           ls -lh release/
+      - name: Ensure tag exists
+        run: |
+          TAG="${{ github.event.inputs.version != '' && format('v{0}', github.event.inputs.version) || github.ref_name }}"
+          echo "tag: $TAG"
+          git fetch --tags --force || true
+          if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "refs/tags/$TAG"
+            echo "created tag $TAG"
+          else
+            echo "tag $TAG already exists"
+          fi
       - uses: softprops/action-gh-release@v2
         with:
           files: release/*
           generate_release_notes: true
+          # workflow_dispatch 时没有 tag，必须显式指定；
+          # push tag 时用触发该次运行的 tag
+          tag_name: ${{ github.event.inputs.version != '' && format('v{0}', github.event.inputs.version) || github.ref_name }}
           body: |
             ## 🌿 大水大睡大健康 — Health Float
 
