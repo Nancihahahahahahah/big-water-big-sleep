@@ -16,6 +16,12 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
         python: ["3.9", "3.11", "3.13"]
+        exclude:
+          # ubuntu-latest 已升级到 26.04，官方不再提供 Python 3.9 构建
+          # （setup-python 直接报 "The version '3.9' ... was not found for Ubuntu 26.04"）。
+          # 3.9 的兼容性由 macOS / Windows 两个 runner 继续覆盖。
+          - os: ubuntu-latest
+            python: "3.9"
 
     steps:
       - uses: actions/checkout@v4
@@ -30,10 +36,14 @@ jobs:
       - name: Ensure tkinter (Linux)
         if: runner.os == 'Linux'
         run: |
+          set -e
           sudo apt-get update
           sudo apt-get install -y xvfb libtk8.6 libtcl8.6
+          # setup-python 的解释器通常自带 _tkinter 绑定，但可能缺系统的
+          # libtk/libtcl 动态库 —— 那才是要装的。先验证再决定要不要装包。
           if ! python -c "import tkinter" >/dev/null 2>&1; then
             echo "tkinter 模块缺失，尝试安装系统包"
+            sudo apt-get install -y "python${{ matrix.python }}-tk" || \
             sudo apt-get install -y python3-tk || true
           fi
           python -c "import tkinter; print('tkinter OK', tkinter.TkVersion)"
