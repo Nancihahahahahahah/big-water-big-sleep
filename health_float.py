@@ -1156,9 +1156,15 @@ class FloatApp:
         self.black_left = secs
         self._bo_exts = 0                      # 鼠标活动延长次数
         self._bo_persist = (kind == "long")    # 洗澡/睡觉：鼠标还在动就继续黑
-        self._bo_last_extend = 0.0             # 上次延长的时刻（时间节流）
+        # 注意：这两个时间戳的初值必须是 None，不能用 0.0。
+        # time.monotonic() 的起点在不同 Python / 平台上并不一致
+        # （macOS 上 3.9 返回进程运行时长，3.13 返回系统运行时长），
+        # 用 0.0 当「从未延长过」的哨兵，会让 now - 0.0 落在节流窗口内，
+        # 结果是第一次延长被直接吞掉 —— 也就是用户反馈的
+        # 「动鼠标不继续黑屏」。None 才能表达「没有上次记录」。
+        self._bo_last_extend = None           # 上次延长的时刻（时间节流）
         self._bo_total = 0                    # 累计黑屏秒数（总时长上限）
-        self._bo_msg_until = 0.0              # 「还在工作」提示显示到何时
+        self._bo_msg_until = None             # 「还在工作」提示显示到何时
 
         bw = tk.Toplevel(self.root)
         self.blackout = bw
@@ -1214,7 +1220,9 @@ class FloatApp:
             return False
         now = time.monotonic()
         # 节流：距上次延长至少 1.5 秒才算一次，避免高频事件刷屏
-        if now - self._bo_last_extend < 1.5:
+        # （_bo_last_extend 为 None = 从未延长过，不受时钟基准影响）
+        if (self._bo_last_extend is not None
+                and now - self._bo_last_extend < 1.5):
             return False
         # 总时长上限：累计黑屏不超过 5 分钟，绝不把人锁死
         secs = self._blackout_for(self.current)
@@ -1257,7 +1265,8 @@ class FloatApp:
             self._close_blackout()
             return
         # 「还在工作」的提示保持几秒，别被倒计时立刻盖掉
-        if time.monotonic() < self._bo_msg_until:
+        if (self._bo_msg_until is not None
+                and time.monotonic() < self._bo_msg_until):
             self.bo_count.config(text="检测到你还在工作 · 继续黑屏休息")
         else:
             self.bo_count.config(text=f"{max(self.black_left, 0)} 秒后回来")
@@ -1280,8 +1289,13 @@ class FloatApp:
         self.settings_win = dlg
         return dlg
 
-    def _show_menu(self, e):
-        """右键菜单：把所有能力显式列出来，不再依赖隐藏手势"""
+    def _build_menu(self):
+        """构建右键菜单（与弹出分离，便于测试直接检查菜单项）。
+
+        tk_popup() 会进入 Tk 的事件循环等待用户点击，在无人值守的
+        环境（CI / 单元测试）里会阻塞到超时 —— 所以菜单内容必须
+        能在不弹出的情况下被检查。
+        """
         menu = tk.Menu(self.root, tearoff=0,
                        font=ui_font(10), bg="#ffffff", fg=C_TEXT,
                        activebackground="#e9edf2", relief="flat")
@@ -1295,6 +1309,11 @@ class FloatApp:
         menu.add_command(label=silent, command=self._toggle_silent)
         menu.add_separator()
         menu.add_command(label="✕  退出", command=self._quit)
+        return menu
+
+    def _show_menu(self, e):
+        """右键菜单：把所有能力显式列出来，不再依赖隐藏手势"""
+        menu = self._build_menu()
         try:
             menu.tk_popup(e.x_root, e.y_root)
         finally:

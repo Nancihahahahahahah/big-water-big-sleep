@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timedelta
 
@@ -327,7 +328,11 @@ class TestApp(unittest.TestCase):
         self.assertTrue(dlg.winfo_exists())
 
     def test_right_click_menu_has_settings_entry(self):
-        """右键菜单里必须显式列出设置入口"""
+        """右键菜单里必须显式列出设置入口。
+
+        只构建菜单、不调用 tk_popup —— 弹菜单会进入 Tk 事件循环等
+        用户点击，在无人值守环境里会阻塞到超时（CI 上曾卡满 20 分钟）。
+        """
         items = []
         real_menu = tk.Menu
 
@@ -343,7 +348,7 @@ class TestApp(unittest.TestCase):
 
         tk.Menu = spy_menu
         try:
-            self.app._show_menu(type("E", (), {"x_root": 10, "y_root": 10})())
+            self.app._build_menu()
         finally:
             tk.Menu = real_menu
         self.assertTrue(any("设置" in i for i in items),
@@ -484,10 +489,54 @@ class TestApp(unittest.TestCase):
         self.app.next_run["sleep"] = datetime.now() - timedelta(seconds=1)
         self.app._tick_step()
         self.app._bo_total = 295          # 已累计 295 秒
-        self.app._bo_last_extend = 0.0    # 允许延长（节流不拦）
+        self.app._bo_last_extend = None   # 允许延长（节流不拦）
         ok = self.app._extend_blackout()
         self.assertFalse(ok, "累计超 5 分钟不应再延长")
         self.assertLess(self.app._bo_total + 10, 306)  # 上限语义自检
+
+    def test_blackout_first_extension_never_throttled(self):
+        """第一次延长必须生效 —— 不能被节流误伤。
+
+        回归测试：time.monotonic() 的起点在不同 Python / 平台上并不
+        统一（macOS 上 3.9 是进程运行时长，3.13 是系统运行时长）。
+        曾经用 0.0 当「从未延长过」的哨兵，导致在 3.9 上
+        `now - 0.0 < 1.5` 成立，第一次延长被节流直接吞掉 ——
+        也就是用户反馈的「黑屏后动鼠标不继续黑屏」。
+        本测试把时钟基准压到接近 0，模拟 3.9 的行为。
+        """
+        self.app.cfg["blackout_seconds"] = 10
+        self.app.next_run["shower"] = datetime.now() - timedelta(seconds=1)
+        self.app._tick_step()
+
+        real_monotonic = time.monotonic
+        base = {"t": 0.05}          # 模拟 3.9：进程刚启动，now 很小
+
+        def fake_monotonic():
+            base["t"] += 0.001
+            return base["t"]
+
+        time.monotonic = fake_monotonic
+        try:
+            ok = self.app._extend_blackout()
+        finally:
+            time.monotonic = real_monotonic
+
+        self.assertTrue(ok, "时钟基准接近 0 时，第一次延长仍必须生效")
+        self.assertEqual(self.app._bo_exts, 1)
+        self.assertEqual(self.app.black_left, 10)
+
+    def test_blackout_msg_sentinel_is_none_not_zero(self):
+        """_bo_msg_until 必须用 None 而非 0.0 当「未设置」哨兵。
+
+        同上：0.0 在小基准时钟下会被误判为「提示还在显示」。
+        """
+        self.app.cfg["blackout_seconds"] = 10
+        self.app.next_run["sleep"] = datetime.now() - timedelta(seconds=1)
+        self.app._tick_step()
+        self.assertIsNone(self.app._bo_msg_until,
+                          "未延长过时 _bo_msg_until 应为 None")
+        self.assertIsNone(self.app._bo_last_extend,
+                          "未延长过时 _bo_last_extend 应为 None")
 
     def test_gear_icon_above_bg(self):
         """⚙ 图标必须在白色底板之上（否则只剩一个白色方块）"""
