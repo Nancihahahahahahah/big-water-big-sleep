@@ -24,6 +24,17 @@ import time
 import tkinter as tk
 from datetime import datetime, timedelta
 
+# CustomTkinter（13.6k★，tkinter 生态 star 最高的现代 UI 库）：
+# 用它把设置面板重做成卡片式圆角界面。
+# 但它是可选依赖 —— 源码直接跑时若没装，自动降级回原生 tk 面板，
+# 保证「下载源码就能跑」这条底线不被破坏。
+try:
+    import customtkinter as ctk
+    HAVE_CTK = True
+except ImportError:      # pragma: no cover - 环境没装 CTK 时的降级路径
+    ctk = None
+    HAVE_CTK = False
+
 def _base_dir():
     """程序根目录。
 
@@ -104,17 +115,19 @@ DEFAULT_CONFIG = {
 }
 
 # 设置面板字段：(config key, 标题, 说明, 类型)
+# label 里的 emoji 前后都留空格：Tk 对 emoji 的宽度计算不准，
+# 不留空隙时 emoji 会紧贴文字（截图里「看远方🪟」那样）。
 SETT_ITEMS = [
-    ("eye_minutes", "看远方 🪟", "每几分钟一次（0=关）", "int"),
-    ("move_minutes", "起来动一动 🧘", "每几分钟一次（0=关）", "int"),
-    ("water_minutes", "喝水 💧", "每几分钟一次（0=关）", "int"),
-    ("shower_time", "洗澡提醒 🛁", "每天几点提醒", "time"),
-    ("sleep_time", "睡觉提醒 🌙", "每天几点提醒", "time"),
-    ("prewarn_seconds", "提前预告 ⏰", "提前几秒开始提示（0=关）", "int"),
-    ("blackout_seconds", "洗澡/睡觉黑屏 🖥", "先黑屏几秒（0=关）", "int"),
-    ("blackout_brief_seconds", "眺望/站立黑屏 🌑", "先黑屏几秒（0=关）", "int"),
-    ("meeting_mode", "会议模式 🎙", "开启后提醒永不黑屏", "bool"),
-    ("sound", "提示音 🔔", "关掉就是静音模式", "bool"),
+    ("eye_minutes", "看远方 🪟 ", "每几分钟一次（0=关）", "int"),
+    ("move_minutes", "起来动一动 🧘 ", "每几分钟一次（0=关）", "int"),
+    ("water_minutes", "喝水 💧 ", "每几分钟一次（0=关）", "int"),
+    ("shower_time", "洗澡提醒 🛁 ", "每天几点提醒", "time"),
+    ("sleep_time", "睡觉提醒 🌙 ", "每天几点提醒", "time"),
+    ("prewarn_seconds", "提前预告 ⏰ ", "提前几秒开始提示（0=关）", "int"),
+    ("blackout_seconds", "洗澡/睡觉黑屏 🖥 ", "先黑屏几秒（0=关）", "int"),
+    ("blackout_brief_seconds", "眺望/站立黑屏 🌑 ", "先黑屏几秒（0=关）", "int"),
+    ("meeting_mode", "会议模式 🎙 ", "开启后提醒永不黑屏", "bool"),
+    ("sound", "提示音 🔔 ", "关掉就是静音模式", "bool"),
 ]
 
 
@@ -195,11 +208,18 @@ ALERT_META = {
 }
 
 # —— 配色 / 尺寸（固定，不缩放）——
-C_CABIN = "#b8bdc4"
-C_TEXT = "#33465c"
-C_DIM = "#5c6b7a"
-C_PANEL = "#f4f6f9"
-C_BTN_FG = "#f2f6fa"
+# 设计 token：一套低饱和莫兰迪灰蓝，跨浮窗/提醒卡/设置面板统一。
+# 参照项目「tayu-design-system」的降饱和思路：不用高饱和强调色。
+C_CABIN = "#b8bdc4"       # 舷窗外框灰（与素材图四角一致）
+C_TEXT = "#33465c"        # 主文字：深灰蓝
+C_DIM = "#5c6b7a"         # 次文字：中灰蓝
+C_PANEL = "#f4f6f9"       # 卡片底：极浅灰蓝
+C_BTN_FG = "#f2f6fa"      # 深色按钮上的文字
+C_ACCENT = "#4a6076"      # 主强调色（比主文字略亮一档）
+C_ACCENT_HOVER = "#3d5266"
+C_SOFT = "#e6ebf1"        # 浅色底板：比 C_PANEL 稍深，用于次级按钮
+C_LINE = "#dbe2ea"        # 描边：更淡，不再是突兀的深框
+C_HOVER_TINT = "#c9d0d8"  # 齿轮底板 hover 色
 BUBBLE = (140, 241)          # 常驻泡泡 = 素材图 140x193 + 下方文字条 48
 BUBBLE_IMG = (140, 193)      # 素材图尺寸
 STRIP_H = 48                 # 图下文字条高度（画布灰底，与图四角同色）
@@ -284,9 +304,166 @@ class NumDial(tk.Frame):
         return max(self.lo, min(self.hi, v))
 
 
+# ---------------- CustomTkinter 控件层 ----------------
+# 13.6k★ 的 CustomTkinter 提供现代圆角控件（CTkButton / CTkSwitch /
+# CTkEntry），用来把设置面板从「tk.Label 拼出来的按钮」升级成
+# 真正的现代卡片式界面。
+#
+# 兼容性：CTK 控件可安全挂在原生 tk 父级下（已验证），因此
+# 浮窗本体仍用原生 tk.Canvas —— 那是画布渲染，CTK 管不到，
+# 硬套反而会破坏舷窗的自定义绘制。
+if HAVE_CTK:
+    ctk.set_appearance_mode("light")
+
+    class _CTKStepper(ctk.CTkFrame):
+        """CTK 版数字拨轮：上下箭头 + 可输入的数字框。
+
+        保留原 NumDial 的外部接口（.var / .get()），
+        所以设置面板的 collect/reset 逻辑两边通用。
+        """
+
+        def __init__(self, master, value=60, lo=0, hi=1440, step=5,
+                     unit="分钟", width=4, changed=None):
+            super().__init__(master, fg_color="transparent")
+            self.lo, self.hi = lo, hi
+            self.step = step
+            self.unit = unit
+            self.changed = changed
+            self.var = tk.StringVar(value=str(int(value)))
+            # 注意：绝不能设 self.var_m = None。
+            # 面板的 _reset 用 hasattr(w, "var_m") 区分「时间拨轮」和
+            # 「数字拨轮」；哪怕赋 None，hasattr 也会返回 True，
+            # 数字拨轮会被误当成时间拨轮去取 var_h 而崩。
+
+            # CTkEntry 的 width 单位是像素，不是字符数。
+            # 按字符数换算会导致「120」被截成「12C」（末位被切掉）。
+            self.entry = ctk.CTkEntry(
+                self, textvariable=self.var, width=56,
+                font=ui_font(14, True), justify="center",
+                corner_radius=8, border_width=1, border_color=C_LINE,
+                fg_color="#ffffff", text_color=C_TEXT)
+            self.entry.pack(side="left")
+
+            arrow_col = ctk.CTkFrame(self, fg_color="transparent")
+            arrow_col.pack(side="left", padx=(3, 0))
+            up = ctk.CTkButton(arrow_col, text="▲", width=18, height=13,
+                                corner_radius=4, fg_color=C_SOFT,
+                                hover_color="#d3dae3", text_color=C_DIM,
+                                font=ui_font(8), command=self._up)
+            up.pack()
+            down = ctk.CTkButton(arrow_col, text="▼", width=18, height=13,
+                                  corner_radius=4, fg_color=C_SOFT,
+                                  hover_color="#d3dae3", text_color=C_DIM,
+                                  font=ui_font(8), command=self._down)
+            down.pack()
+
+            if unit:
+                ctk.CTkLabel(self, text=unit, font=ui_font(11),
+                             text_color=C_DIM).pack(side="left", padx=(6, 0))
+
+            self.entry.bind("<KeyRelease>", lambda e: self._on_change())
+            self.entry.bind("<FocusOut>", lambda e: self._on_change())
+
+        def _bump(self, delta):
+            try:
+                v = int(float(self.var.get() or 0))
+            except (TypeError, ValueError):
+                v = self.lo
+            v = max(self.lo, min(self.hi, v + delta))
+            self.var.set(str(v))
+            self._on_change()
+
+        def _up(self):
+            self._bump(self.step)
+
+        def _down(self):
+            self._bump(-self.step)
+
+        def _on_change(self, *_):
+            if self.changed:
+                try:
+                    self.changed(self.get())
+                except ValueError:
+                    pass
+
+        def get(self):
+            try:
+                v = int(float(self.var.get() or 0))
+            except (TypeError, ValueError):
+                v = self.lo
+            return max(self.lo, min(self.hi, v))
+
+    class _CTKTimeDial(ctk.CTkFrame):
+        """CTK 版闹钟拨轮：HH : MM，保留 .var_h / .var_m / .get()。"""
+
+        def __init__(self, master, hhmm="21:30", changed=None):
+            super().__init__(master, fg_color="transparent")
+            hm = parse_hhmm(hhmm) or (21, 30)
+            self.var_h = tk.StringVar(value=f"{hm[0]:02d}")
+            self.var_m = tk.StringVar(value=f"{hm[1]:02d}")
+            self.changed = changed
+
+            self.eh = ctk.CTkEntry(self, textvariable=self.var_h, width=52,
+                                   font=ui_font(15, True), justify="center",
+                                   corner_radius=8, border_width=1,
+                                   border_color=C_LINE, fg_color="#ffffff",
+                                   text_color=C_TEXT)
+            self.eh.pack(side="left")
+            ctk.CTkLabel(self, text=":", font=ui_font(15, True),
+                         text_color=C_DIM, width=12).pack(side="left")
+            self.em = ctk.CTkEntry(self, textvariable=self.var_m, width=52,
+                                   font=ui_font(15, True), justify="center",
+                                   corner_radius=8, border_width=1,
+                                   border_color=C_LINE, fg_color="#ffffff",
+                                   text_color=C_TEXT)
+            self.em.pack(side="left")
+
+            arrow_col = ctk.CTkFrame(self, fg_color="transparent")
+            arrow_col.pack(side="left", padx=(4, 0))
+            ctk.CTkButton(arrow_col, text="▲", width=18, height=13,
+                          corner_radius=4, fg_color=C_SOFT,
+                          hover_color="#d3dae3", text_color=C_DIM,
+                          font=ui_font(8),
+                          command=self._bump_h).pack()
+            ctk.CTkButton(arrow_col, text="▼", width=18, height=13,
+                          corner_radius=4, fg_color=C_SOFT,
+                          hover_color="#d3dae3", text_color=C_DIM,
+                          font=ui_font(8),
+                          command=self._bump_m).pack()
+
+            self.eh.bind("<KeyRelease>", lambda e: self._on_change())
+            self.em.bind("<KeyRelease>", lambda e: self._on_change())
+
+        def _bump_h(self):
+            hm = parse_hhmm(self.get()) or (21, 30)
+            self.var_h.set(f"{(hm[0] + 1) % 24:02d}")
+            self._on_change()
+
+        def _bump_m(self):
+            hm = parse_hhmm(self.get()) or (21, 30)
+            self.var_m.set(f"{(hm[1] + 5) % 60:02d}")
+            self._on_change()
+
+        def _on_change(self, *_):
+            if self.changed:
+                try:
+                    self.changed(self.get())
+                except ValueError:
+                    pass
+
+        def get(self):
+            h = max(0, min(23, int(float(self.var_h.get() or 0))))
+            m = max(0, min(59, int(float(self.var_m.get() or 0))))
+            return f"{h:02d}:{m:02d}"
+
+
 # ---------------- 设置窗口（双击浮窗打开 / 首次引导共用） ----------------
-class SettingsDialog(tk.Toplevel):
-    """所有提醒时间可视化设置：int 用数字拨轮，time 用闹钟拨轮"""
+class LegacySettingsDialog(tk.Toplevel):
+    """原生 tk 版设置面板 —— CustomTkinter 不可用时的降级路径。
+
+    界面朴素，但功能与 CTK 版完全一致（同一套 SETT_ITEMS、
+    同样的 collect/_reset 语义）。
+    """
 
     def __init__(self, master, cfg, title="Health Float 设置",
                  intro="双击浮窗随时能回到这里修改"):
@@ -392,6 +569,154 @@ class SettingsDialog(tk.Toplevel):
         if self.on_saved:
             self.on_saved()
         self.destroy()
+
+
+if HAVE_CTK:
+    class SettingsDialog(ctk.CTkToplevel):
+        """CustomTkinter 版设置面板（13.6k★ 库）。
+
+        相比原生 tk 版：
+        - 卡片分组（间隔 / 每日 / 黑屏 / 开关），信息层次清楚
+        - 真圆角按钮 + hover 反馈，不再是「用 Label 假装按钮」
+        - 开关用 CTkSwitch，视觉上比系统 Checkbutton 干净
+        - 拨轮用 CTkEntry + 圆角箭头按钮
+        """
+
+        def __init__(self, master, cfg, title="Health Float 设置",
+                     intro="双击浮窗随时能回到这里修改"):
+            super().__init__(master)
+            self.cfg = cfg
+            self.on_saved = None
+            self.title(title)
+            self.configure(fg_color="#ffffff")
+            self.resizable(False, False)
+            self.transient(master)
+
+            # —— 标题区 ——
+            ctk.CTkLabel(self, text="🌿 大水大睡大健康", font=ui_font(17, True),
+                         text_color=C_TEXT).pack(pady=(18, 2))
+            ctk.CTkLabel(self, text=intro, font=ui_font(11),
+                         text_color=C_DIM).pack(pady=(0, 12))
+
+            # —— 卡片容器：按语义分组，不再是 10 行平铺 ——
+            groups = [
+                ("⏱  间隔提醒", ["eye_minutes", "move_minutes", "water_minutes"]),
+                ("🌙  每日提醒", ["shower_time", "sleep_time"]),
+                ("🖥  黑屏时长", ["prewarn_seconds", "blackout_seconds",
+                                 "blackout_brief_seconds"]),
+                ("🎙  模式开关", ["meeting_mode", "sound"]),
+            ]
+            meta = {k: (lb, hint, kind) for k, lb, hint, kind in SETT_ITEMS}
+            self.widgets = {}
+
+            for gi, (gname, keys) in enumerate(groups):
+                card = ctk.CTkFrame(self, fg_color="#f7f9fb",
+                                    corner_radius=14,
+                                    border_width=1, border_color="#e9eef4")
+                card.pack(fill="x", padx=20, pady=(0, 9))
+                ctk.CTkLabel(card, text=gname, font=ui_font(12, True),
+                             text_color=C_ACCENT, anchor="w").pack(
+                                 fill="x", padx=14, pady=(10, 2))
+
+                for ri, key in enumerate(keys):
+                    label, hint, kind = meta[key]
+                    row = ctk.CTkFrame(card, fg_color="transparent")
+                    row.pack(fill="x", padx=14, pady=4)
+
+                    ctk.CTkLabel(row, text=label, font=ui_font(12),
+                                 text_color=C_TEXT, width=15,
+                                 anchor="w").pack(side="left")
+
+                    if kind == "int":
+                        w = _CTKStepper(
+                            row, value=cfg.get(key, 0) or 0,
+                            unit=("" if key == "sound" else
+                                  "秒" if "seconds" in key else "分钟"))
+                        w.pack(side="left")
+                    elif kind == "time":
+                        w = _CTKTimeDial(row, hhmm=cfg.get(key) or "21:30")
+                        w.pack(side="left")
+                    else:  # bool → 开关
+                        var = tk.BooleanVar(value=bool(cfg.get(key)))
+                        w = ctk.CTkSwitch(
+                            row, text="", variable=var,
+                            onvalue=True, offvalue=False, width=40,
+                            progress_color=C_ACCENT, fg_color="#c3ccd6",
+                            button_color="#ffffff",
+                            button_hover_color="#eef2f7")
+                        w.var = var
+                        w.pack(side="left")
+                    self.widgets[key] = w
+
+                    ctk.CTkLabel(row, text=hint, font=ui_font(10),
+                                 text_color="#8a97a6", anchor="w").pack(
+                                     side="left", padx=(12, 0))
+
+            # —— 使用说明卡片 ——
+            help_box = ctk.CTkFrame(self, fg_color="#f4f6f9", corner_radius=14,
+                                     border_width=1, border_color="#e9eef4")
+            help_box.pack(fill="x", padx=20, pady=(4, 0))
+            ctk.CTkLabel(
+                help_box,
+                text="⚙ 点舷窗右下角齿轮  ·  右键舷窗 = 快捷菜单\n"
+                     "🎙 会议模式（不黑屏）  ·  🔕 静音模式（只弹窗不出声）\n"
+                     "间隔填 0 = 关闭该提醒  ·  时间留空 = 不提醒",
+                font=ui_font(10), text_color=C_DIM, justify="left",
+                anchor="w").pack(padx=14, pady=11, fill="x")
+
+            # —— 底部按钮 ——
+            btns = ctk.CTkFrame(self, fg_color="transparent")
+            btns.pack(pady=(14, 18))
+            reset = ctk.CTkButton(btns, text="恢复默认", width=96, height=34,
+                                   corner_radius=10, fg_color=C_SOFT,
+                                   hover_color="#d3dae3", text_color=C_DIM,
+                                   font=ui_font(12), command=self._reset)
+            reset.pack(side="left", padx=6)
+            ok = ctk.CTkButton(btns, text="保存 ✓", width=104, height=34,
+                                corner_radius=10, fg_color=C_ACCENT,
+                                hover_color=C_ACCENT_HOVER, text_color=C_BTN_FG,
+                                font=ui_font(12, True), command=self._save)
+            ok.pack(side="left", padx=6)
+
+            self.bind("<Return>", lambda e: self._save())
+            self.bind("<Escape>", lambda e: self.destroy())
+            self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        def collect(self):
+            """读出表单 → dict"""
+            out = {}
+            for key, _, _, kind in SETT_ITEMS:
+                w = self.widgets[key]
+                if kind in ("int", "time"):
+                    out[key] = w.get()
+                else:
+                    out[key] = bool(w.var.get())
+            return out
+
+        def _reset(self):
+            for key, val in DEFAULT_CONFIG.items():
+                if key not in self.widgets:
+                    continue
+                w = self.widgets[key]
+                if hasattr(w, "var_m"):          # 时间拨轮
+                    hm = parse_hhmm(str(val)) or (21, 30)
+                    w.var_h.set(f"{hm[0]:02d}")
+                    w.var_m.set(f"{hm[1]:02d}")
+                elif isinstance(w.var, tk.BooleanVar):   # 开关
+                    w.var.set(bool(val))
+                elif hasattr(w, "var"):           # 数字拨轮
+                    w.var.set(str(int(val)))
+
+        def _save(self):
+            out = self.collect()
+            self.cfg.update(out)
+            save_config(self.cfg)
+            if self.on_saved:
+                self.on_saved()
+            self.destroy()
+else:
+    # CustomTkinter 不可用 → 降级到原生 tk 面板
+    SettingsDialog = LegacySettingsDialog
 
 
 # ---------------- 主应用 ----------------
@@ -500,23 +825,28 @@ class FloatApp:
         self.icon_id = cv.create_text(
             0, 0, text="🌿", font=ui_font(28), fill=C_TEXT, tags=("icon",))
         # 泡泡文字：素材灰区（GRAY_Y 之下）两行，行距舒展
-        self.time_id = cv.create_text(0, 0, text="", font=ui_font(10, True),
+        # 字号比原版放大一档（10/8 → 12/10）：悬窗远看小字吃力。
+        self.time_id = cv.create_text(0, 0, text="", font=ui_font(12, True),
                                       fill=C_TEXT)
-        self.name_id = cv.create_text(0, 0, text="", font=ui_font(8),
+        self.name_id = cv.create_text(0, 0, text="", font=ui_font(10),
                                       fill=C_DIM)
         # —— 可见入口：设置齿轮 + 会议模式指示 ——
         # 之前只有隐藏手势（双击/右键），用户根本不知道它们存在。
         # 现在把入口画出来，点了就开设置面板。
+        # 齿轮底板改成「无描边淡色圆」，不再是一个突兀的白框：
+        # 旧的白色圆角方块 + 深描边浮在灰条上，像贴错了的控件。
         self.gear_id = cv.create_text(
-            BUBBLE[0] - 16, BUBBLE_IMG[1] + 24, text="⚙", font=ui_font(13),
+            BUBBLE[0] - 16, BUBBLE_IMG[1] + 24, text="⚙", font=ui_font(14),
             fill=C_DIM, tags=("gear",))
-        self.gear_bg = round_rect(cv, BUBBLE[0] - 29, BUBBLE_IMG[1] + 12,
-                                  BUBBLE[0] - 3, BUBBLE_IMG[1] + 36, 8,
-                                  fill=C_PANEL, outline="#dde3ea",
-                                  tags=("gear",))
+        self.gear_bg = cv.create_oval(
+            BUBBLE[0] - 29, BUBBLE_IMG[1] + 12,
+            BUBBLE[0] - 3, BUBBLE_IMG[1] + 38,
+            fill=C_HOVER_TINT, outline="", tags=("gear",))
         # 底板必须压在齿轮图标下面：后创建的画布元素层级更高，
         # 不降序的话白底板会把 ⚙ 完全盖住（只剩一个白色方块）。
         cv.tag_lower(self.gear_bg, self.gear_id)
+        # 平时隐藏底板，只留图标；鼠标靠近时才淡入，避免灰条上挂个框。
+        cv.itemconfigure(self.gear_bg, state="hidden")
         self.mute_id = cv.create_text(
             0, 0, text="🔇", font=ui_font(11), fill="#c8802f",
             tags=("mute",), state="hidden")
@@ -526,23 +856,37 @@ class FloatApp:
             tags=("silent",), state="hidden")
         # 提醒卡右栏（白色圆角面板）
         self.panel_id = round_rect(cv, *PANEL, 10, fill=C_PANEL,
-                                   outline="#dde3ea")
-        self.a_title_id = cv.create_text(0, 0, text="", font=ui_font(13, True),
+                                   outline=C_LINE)
+        self.a_title_id = cv.create_text(0, 0, text="", font=ui_font(15, True),
                                          fill=C_TEXT)
-        self.a_sub_id = cv.create_text(0, 0, text="", font=ui_font(10),
+        self.a_sub_id = cv.create_text(0, 0, text="", font=ui_font(11),
                                        fill=C_DIM, justify="center")
         self.a_count_id = cv.create_text(0, 0, text="",
-                                         font=ui_font(13, True), fill=C_TEXT)
-        self.a_btn_id = round_rect(cv, 0, 0, 10, 10, 8, fill=C_TEXT,
+                                         font=ui_font(15, True), fill=C_TEXT)
+        self.a_btn_id = round_rect(cv, 0, 0, 10, 10, 8, fill=C_ACCENT,
                                    outline="", tags=("btn",))
         self.a_btn_txt = cv.create_text(0, 0, text="知道了 ✓",
-                                        font=ui_font(10, True), fill=C_BTN_FG)
-        self.a_hint_id = cv.create_text(0, 0, text="", font=ui_font(8),
+                                        font=ui_font(11, True), fill=C_BTN_FG)
+        self.a_hint_id = cv.create_text(0, 0, text="", font=ui_font(9),
                                         fill=C_DIM)
         cv.tag_bind("btn", "<Button-1>", lambda e: self._dismiss())
         cv.tag_bind("a_btn_txt", "<Button-1>", lambda e: self._dismiss())
         # 齿轮：可见的设置入口，点了直接开面板
         cv.tag_bind("gear", "<Button-1>", lambda e: self._open_settings())
+        # 齿轮底板平时隐藏，鼠标移到齿轮上才淡入 —— 平时灰条上只有一个
+        # 图标，不再挂着一个突兀的白色方框。
+        cv.tag_bind("gear", "<Enter>", lambda e: self._gear_hover(True))
+        cv.tag_bind("gear", "<Leave>", lambda e: self._gear_hover(False))
+
+    def _gear_hover(self, on):
+        """齿轮 hover：底板淡入 / 淡出，图标同步提亮。"""
+        if not (self.gear_id and self.gear_bg):
+            return
+        try:
+            self.cv.itemconfig(self.gear_bg, state="normal" if on else "hidden")
+            self.cv.itemconfig(self.gear_id, fill=C_TEXT if on else C_DIM)
+        except tk.TclError:
+            pass
 
     def _hide(self, *ids):
         for i in ids:
@@ -572,16 +916,18 @@ class FloatApp:
         cv.coords(self.img_id, 0, 0)
         cv.coords(self.icon_id, BUBBLE_IMG[0] * 0.535, BUBBLE_IMG[1] * 0.46)
         # 文字条在图片下方（y >= 193），与图物理隔离，行距舒展
-        cv.coords(self.time_id, w / 2, BUBBLE_IMG[1] + 12)
-        cv.coords(self.name_id, w / 2, BUBBLE_IMG[1] + 34)
+        # 字号放大后重新分配两行的基线：主行上移一点、副行下移一点，
+        # 保持整体在 48px 文字条内居中，不顶边也不压边。
+        cv.coords(self.time_id, w / 2, BUBBLE_IMG[1] + 14)
+        cv.coords(self.name_id, w / 2, BUBBLE_IMG[1] + 35)
         # —— 可见入口：齿轮在文字条右下角（不压图），会议模式指示在左上 ——
-        self._show(self.gear_id, self.gear_bg)
+        self._show(self.gear_id)
         # 圆角多边形的 coords 要给完整点集（move 是相对位移，
         # 反复 layout 会累积漂移）；用绝对坐标一次性定位
-        gx, gy = w - 18, BUBBLE_IMG[1] + 22
+        gx, gy = w - 17, BUBBLE_IMG[1] + 24
         cv.coords(self.gear_id, gx, gy)
-        cv.coords(self.gear_bg, *round_rect_pts(gx - 13, gy - 13,
-                                                  gx + 13, gy + 13, 7))
+        # 底板是圆形（oval），默认隐藏，hover 齿轮时才显示
+        cv.coords(self.gear_bg, gx - 14, gy - 14, gx + 14, gy + 14)
         if self.cfg.get("meeting_mode"):
             self._show(self.mute_id)
             cv.coords(self.mute_id, 14, BUBBLE_IMG[1] + 12)
@@ -605,11 +951,10 @@ class FloatApp:
         self._show(self.panel_id)   # 面板位置固定，创建时已定，无需重设坐标
         self._hide(self.time_id, self.name_id)
         # 提醒卡状态下齿轮挪到面板右下角，始终可点
-        self._show(self.gear_id, self.gear_bg)
+        self._show(self.gear_id)
         gx, gy = PANEL[2] - 16, PANEL[3] - 16
         cv.coords(self.gear_id, gx, gy)
-        cv.coords(self.gear_bg, *round_rect_pts(gx - 13, gy - 13,
-                                                  gx + 13, gy + 13, 7))
+        cv.coords(self.gear_bg, gx - 14, gy - 14, gx + 14, gy + 14)
         self._show(self.icon_id)
         cv.itemconfig(self.icon_id, font=ui_font(26))
         cv.coords(self.icon_id,

@@ -18,6 +18,24 @@ if errorlevel 1 (
     )
 )
 
+echo == 检查 CustomTkinter（可选，装了才有现代界面）==
+python -c "import customtkinter" >nul 2>nul
+if errorlevel 1 (
+    echo 未安装 CustomTkinter，正在安装...
+    python -m pip install --quiet customtkinter >nul 2>nul
+    python -c "import customtkinter" >nul 2>nul
+    if errorlevel 1 (
+        echo [!] 安装失败，将打包降级版（原生 tk 设置面板，功能一致）
+        set "CTKARG="
+    ) else (
+        echo [OK] 安装成功，将打包现代界面版
+        set "CTKARG=--collect-all customtkinter"
+    )
+) else (
+    echo [OK] CustomTkinter 已安装，将打包现代界面版
+    set "CTKARG=--collect-all customtkinter"
+)
+
 echo == 打包中（首次约 1-2 分钟）==
 set "STAMP=%RANDOM%%RANDOM%"
 set "BUILDDIR=%CD%\.build\v%STAMP%"
@@ -29,6 +47,7 @@ python -m PyInstaller --noconfirm --windowed ^
     --workpath "%BUILDDIR%\work" ^
     --specpath "%BUILDDIR%" ^
     --add-data "%CD%\assets;assets" ^
+    %CTKARG% ^
     "%CD%\health_float.py"
 
 if errorlevel 1 (

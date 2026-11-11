@@ -32,7 +32,7 @@ jobs:
       - name: Install build deps
         run: |
           /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 -m pip install --upgrade pip
-          /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 -m pip install pyinstaller pillow
+          /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 -m pip install pyinstaller pillow customtkinter
       - name: Build
         run: |
           export HEALTH_FLOAT_BUILD_PYTHON="/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install pyinstaller
+      - run: pip install pyinstaller customtkinter
       - name: Build
         shell: bash
         run: |
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install pyinstaller
+      - run: pip install pyinstaller customtkinter
       - name: Build onefile
         run: |
           echo "跳过：AppImage 走 onedir，由 linux-installer.sh 负责"

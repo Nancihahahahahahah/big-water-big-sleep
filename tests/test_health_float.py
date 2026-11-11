@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import tkinter as tk  # noqa: E402
+import tkinter.font  # noqa: E402
 
 import health_float as hf  # noqa: E402
 
@@ -161,6 +162,16 @@ class TestApp(unittest.TestCase):
             pass
         self.app.current = None
         self.app.queue.clear()
+        # 清理本用例额外创建的顶层窗口（设置面板等）。
+        # CTK 面板一律用独立 root（见下方 CTK 用例），不在这里销毁，
+        # 避免 CTK 的 configure() 遍历到已销毁的控件。
+        for child in self.root.winfo_children():
+            if isinstance(child, tk.Canvas):
+                continue          # 浮窗的画布，由 FloatApp 自己管
+            try:
+                child.destroy()
+            except Exception:
+                pass
         hf.CONFIG_PATH = self._saved_path
         hf.LEGACY_CONFIG_PATH = self._saved_legacy
 
@@ -227,7 +238,14 @@ class TestApp(unittest.TestCase):
         for _ in range(5):        # 多次 layout，捕捉累积漂移
             self.app._layout()
         for iid in (self.app.gear_id, self.app.gear_bg):
+            # 底板默认隐藏（hover 才淡入），Tk 对隐藏图元不返回 bbox，
+            # 所以临时显示出来量一次真实几何。
+            was_hidden = self.app.cv.itemcget(iid, "state") == "hidden"
+            if was_hidden:
+                self.app.cv.itemconfigure(iid, state="normal")
             bb = self.app.cv.bbox(iid)
+            if was_hidden:
+                self.app.cv.itemconfigure(iid, state="hidden")
             self.assertIsNotNone(bb)
             self.assertLessEqual(bb[2], self.app.w,
                                  f"齿轮超出窗口右边: {bb} vs {self.app.w}")
@@ -243,6 +261,44 @@ class TestApp(unittest.TestCase):
             self.app._layout()
         after = self.app.cv.bbox(self.app.gear_id)
         self.assertEqual(before, after, "齿轮位置在多次 layout 后漂移了")
+
+    def test_gear_backplate_hidden_until_hover(self):
+        """齿轮底板平时隐藏 —— 灰条上不该挂着一个突兀的白框"""
+        self.assertEqual(self.app.cv.itemcget(self.app.gear_bg, "state"),
+                         "hidden",
+                         "齿轮底板应默认隐藏，hover 才淡入")
+        # 图标本身必须一直可见（用户要能看到能点）
+        self.assertEqual(self.app.cv.itemcget(self.app.gear_id, "state"),
+                         "normal")
+
+    def test_gear_hover_reveals_backplate(self):
+        """鼠标移到齿轮上 → 底板淡入；移开 → 收起"""
+        self.app._gear_hover(True)
+        self.assertEqual(self.app.cv.itemcget(self.app.gear_bg, "state"),
+                         "normal")
+        self.app._gear_hover(False)
+        self.assertEqual(self.app.cv.itemcget(self.app.gear_bg, "state"),
+                         "hidden")
+
+    def test_gear_backplate_is_round_not_square(self):
+        """底板是圆形（oval），不是圆角方块 —— 用户反馈白方框很丑"""
+        self.assertEqual(self.app.cv.type(self.app.gear_bg), "oval",
+                         "齿轮底板应是圆形，不是方形")
+
+    def test_bubble_fonts_are_readable(self):
+        """悬窗主文字字号不能太小（用户反馈看着费劲）"""
+        time_font = self.app.cv.itemcget(self.app.time_id, "font")
+        name_font = self.app.cv.itemcget(self.app.name_id, "font")
+        # 字体串形如 "PingFang SC 12 bold"：字号是那个纯数字字段
+        def size_of(spec):
+            for tok in spec.split():
+                if tok.isdigit():
+                    return int(tok)
+            return 0
+        self.assertGreaterEqual(size_of(time_font), 12,
+                                "主文字（倒计时）字号应 ≥ 12")
+        self.assertGreaterEqual(size_of(name_font), 10,
+                                "副文字（提醒名）字号应 ≥ 10")
 
     def test_gear_visible_in_alert_card(self):
         """提醒卡状态下齿轮也要在（不然用户没法在提醒时改设置）"""
@@ -269,7 +325,6 @@ class TestApp(unittest.TestCase):
         dlg = self.app._open_settings()
         self.assertIsNotNone(dlg)
         self.assertTrue(dlg.winfo_exists())
-        dlg.destroy()
 
     def test_right_click_menu_has_settings_entry(self):
         """右键菜单里必须显式列出设置入口"""
@@ -484,13 +539,74 @@ class TestApp(unittest.TestCase):
         out = dlg.collect()
         self.assertEqual(out["shower_time"], "20:30")
         self.assertEqual(out["water_minutes"], 90)
-        dlg.destroy()
 
     def test_dials_roundtrip(self):
         td = hf.TimeDial(self.root, hhmm="22:45")
         self.assertEqual(td.get(), "22:45")
         nd = hf.NumDial(self.root, value=90, hi=1440)
         self.assertEqual(nd.get(), 90)
+
+    # ---------- CustomTkinter 面板（可选依赖）----------
+    @unittest.skipUnless(hf.HAVE_CTK, "未安装 CustomTkinter")
+    def test_ctk_stepper_entry_not_truncating_digits(self):
+        """拨轮数字框必须放得下完整数字。
+
+        CTkEntry 的 width 单位是像素而非字符数 —— 之前按字符数换算，
+        「120」被截成「12C」，末位直接看不见。
+        """
+        # CTK 控件必须挂在独立的 root 上：
+        # 它和浮窗的原生 tk.Canvas 共用一棵控件树时，
+        # CTK 的 configure() 遍历子控件会踩到已销毁的控件而崩。
+        ctk_root = tk.Tk()
+        ctk_root.withdraw()
+        try:
+            stepper = hf._CTKStepper(ctk_root, value=120, unit="秒")
+            ctk_root.update_idletasks()
+            self.assertEqual(stepper.var.get(), "120")
+            # 文本实际渲染宽度必须小于输入框可视宽度
+            font = stepper.entry.cget("font")
+            needed = tkinter.font.Font(root=ctk_root, font=font).measure("120")
+            # winfo_width 在控件未映射时返回 1，用 reqwidth 更可靠
+            actual = max(stepper.entry.winfo_width(),
+                         stepper.entry.winfo_reqwidth())
+            self.assertGreaterEqual(actual, needed,
+                                    "数字框太窄，数字会被截断")
+        finally:
+            ctk_root.destroy()
+
+    @unittest.skipUnless(hf.HAVE_CTK, "未安装 CustomTkinter")
+    def test_ctk_panel_collects_all_items(self):
+        """CTK 面板必须能读出全部设置项，且和原生版语义一致"""
+        ctk_root = tk.Tk()
+        ctk_root.withdraw()
+        try:
+            cfg = dict(hf.DEFAULT_CONFIG)
+            dlg = hf.SettingsDialog(ctk_root, cfg)
+            out = dlg.collect()
+            for key, _, _, _ in hf.SETT_ITEMS:
+                self.assertIn(key, out, f"面板漏掉了设置项 {key}")
+            self.assertEqual(out["meeting_mode"], bool(cfg["meeting_mode"]))
+            self.assertEqual(out["sound"], bool(cfg["sound"]))
+        finally:
+            ctk_root.destroy()
+
+    @unittest.skipUnless(hf.HAVE_CTK, "未安装 CustomTkinter")
+    def test_ctk_panel_reset_restores_defaults(self):
+        """「恢复默认」在 CTK 面板上必须真的生效（数字拨轮 + 开关都要）"""
+        ctk_root = tk.Tk()
+        ctk_root.withdraw()
+        try:
+            cfg = dict(hf.DEFAULT_CONFIG)
+            dlg = hf.SettingsDialog(ctk_root, cfg)
+            dlg.widgets["water_minutes"].var.set("999")
+            dlg.widgets["meeting_mode"].var.set(True)
+            dlg._reset()
+            self.assertEqual(dlg.widgets["water_minutes"].var.get(),
+                             str(hf.DEFAULT_CONFIG["water_minutes"]))
+            self.assertEqual(bool(dlg.widgets["meeting_mode"].var.get()),
+                             bool(hf.DEFAULT_CONFIG["meeting_mode"]))
+        finally:
+            ctk_root.destroy()
 
 
 if __name__ == "__main__":

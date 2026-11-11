@@ -149,9 +149,34 @@ CI 会在 macOS / Windows / Linux × Python 3.9/3.11/3.13 上自动跑。
 ### 打包成安装包
 
 ```bash
-pip install pyinstaller
+pip install pyinstaller customtkinter
 ./build_macos_app.sh          # → dist/Health Float.app（自带 Python，用户零依赖）
 ```
+
+> `customtkinter` 是**可选**依赖：设置面板用它做现代圆角界面（卡片分组、
+> 真按钮、开关）。没装的话程序自动降级到原生 tk 面板，功能一模一样，
+> 只是界面朴素些。打包脚本已带 `--collect-all customtkinter`，
+> 主题 JSON 和字体文件都会一并打进去。
+
+---
+
+## 🎨 界面设计
+
+设置面板基于 **CustomTkinter**（[13.6k★](https://github.com/TomSchimansky/CustomTkinter)，
+tkinter 生态里 star 最高的现代 UI 库）重做：
+
+- **卡片分组**：间隔提醒 / 每日提醒 / 黑屏时长 / 模式开关，四组独立卡片，
+  不再是十行平铺
+- **真圆角按钮**：保存 / 恢复默认都是 `CTkButton`，带 hover 反馈
+- **开关**：`CTkSwitch` 替代系统 Checkbutton
+- **拨轮**：圆角输入框 + 圆角 ▲▼ 按钮，比原生 Spinbox 干净
+
+浮窗（Canvas 绘制部分）保持手绘，但：
+
+- 齿轮按钮**不再有白色方框底板**——平时只显示 ⚙ 图标，鼠标移上去
+  才淡入一个柔和的圆形底板
+- 文字字号放大一档（主文字 10 → 12，副文字 8 → 10），远看也清楚
+- 配色统一到一套低饱和莫兰迪灰蓝 token（`C_ACCENT` / `C_SOFT` / `C_LINE`）
 
 ---
 

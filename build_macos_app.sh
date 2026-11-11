@@ -60,6 +60,24 @@ fi
 ARCH=$(file "$BUILD_PY" 2>/dev/null | grep -o "universal binary" || echo "单架构")
 echo "    构建器 $BUILD_PY  ($ARCH)"
 
+# CustomTkinter 是可选依赖：装了就打包现代圆角面板，
+# 没装也能出包（程序运行时会自动降级到原生 tk 面板）。
+# 这里主动尝试装一次 —— 装不上不阻断构建。
+HAVE_CTK=0
+if "$BUILD_PY" -c "import customtkinter" >/dev/null 2>&1; then
+    HAVE_CTK=1
+    echo "    ✓ CustomTkinter 已安装 → 打包现代界面版"
+else
+    echo "    ⚠ 未装 CustomTkinter，尝试安装..."
+    if "$BUILD_PY" -m pip install --quiet customtkinter >/dev/null 2>&1 \
+       && "$BUILD_PY" -c "import customtkinter" >/dev/null 2>&1; then
+        HAVE_CTK=1
+        echo "    ✓ 安装成功 → 打包现代界面版"
+    else
+        echo "    ⚠ 安装失败 → 打包降级版（设置面板为原生 tk 界面）"
+    fi
+fi
+
 # 目标架构：默认 universal2（Intel Mac + Apple Silicon 通用）。
 # 只有构建器本身是 universal2 时才敢这么做，否则会失败。
 TARGET_ARCH=""
@@ -129,6 +147,12 @@ STAMP="$(date +%H%M%S)"
 BUILD_DIR="$ABS_DIR/.build/v${VER}-$STAMP"
 mkdir -p "$BUILD_DIR"
 # --add-data 的源路径必须是绝对路径（specpath 会改变相对路径的解析基准）
+# CTK 参数只在装了 customtkinter 时才加 —— 没装的话 PyInstaller
+# 会因为找不到模块直接报错。
+CTK_ARGS=()
+if [ "$HAVE_CTK" = "1" ]; then
+    CTK_ARGS=(--collect-all customtkinter)
+fi
 if [ -n "$TARGET_ARCH" ]; then
     "$BUILD_PY" -m PyInstaller \
         --noconfirm --windowed \
@@ -137,6 +161,7 @@ if [ -n "$TARGET_ARCH" ]; then
         --workpath "$BUILD_DIR/work" \
         --specpath "$BUILD_DIR" \
         --add-data "$ABS_DIR/assets:assets" \
+        "${CTK_ARGS[@]}" \
         --osx-bundle-identifier com.nancy.healthfloat \
         --target-arch "$TARGET_ARCH" \
         "$ABS_DIR/health_float.py"
@@ -148,6 +173,7 @@ else
         --workpath "$BUILD_DIR/work" \
         --specpath "$BUILD_DIR" \
         --add-data "$ABS_DIR/assets:assets" \
+        "${CTK_ARGS[@]}" \
         --osx-bundle-identifier com.nancy.healthfloat \
         "$ABS_DIR/health_float.py"
 fi

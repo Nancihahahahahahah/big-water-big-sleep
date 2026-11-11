@@ -20,6 +20,28 @@ fi
 
 ABS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# CustomTkinter 是可选依赖：装了就打包现代圆角面板，
+# 没装也能出包（程序运行时会自动降级到原生 tk 面板）。
+HAVE_CTK=0
+if "$BUILD_PY" -c "import customtkinter" >/dev/null 2>&1; then
+    HAVE_CTK=1
+    echo "    [OK] CustomTkinter 已安装 -> 打包现代界面版"
+else
+    echo "    [!] 未装 CustomTkinter，尝试安装..."
+    if "$BUILD_PY" -m pip install --quiet customtkinter >/dev/null 2>&1 \
+       && "$BUILD_PY" -c "import customtkinter" >/dev/null 2>&1; then
+        HAVE_CTK=1
+        echo "    [OK] 安装成功 -> 打包现代界面版"
+    else
+        echo "    [!] 安装失败 -> 打包降级版（原生 tk 设置面板）"
+    fi
+fi
+
+CTK_ARGS=()
+if [ "$HAVE_CTK" = "1" ]; then
+    CTK_ARGS=(--collect-all customtkinter)
+fi
+
 echo "==> 打包 onedir"
 rm -rf build dist/HealthFloat
 "$BUILD_PY" -m PyInstaller \
@@ -29,6 +51,7 @@ rm -rf build dist/HealthFloat
     --workpath build \
     --specpath build \
     --add-data "$ABS_DIR/assets:assets" \
+    "${CTK_ARGS[@]}" \
     "$ABS_DIR/health_float.py"
 
 # PyInstaller onedir 产物目录 = dist/<name>，即 dist/HealthFloat
