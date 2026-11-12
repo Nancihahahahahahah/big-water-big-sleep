@@ -62,16 +62,27 @@ jobs:
           # 原生 Windows Python 无法解析 —— 用 Python 自己算绝对路径
           ASSETS="$(python -c "import os; print(os.path.abspath('assets'))")"
           echo "assets -> $ASSETS"
+          # CustomTkinter 的主题 JSON 是数据文件。
+          # PyInstaller 自带 hook-customtkinter.py 会收 collect_data_files，
+          # 但那只管数据、不管 hiddenimports —— 显式 --collect-all 更稳，
+          # 且和本地的 build_windows.sh / linux-installer.sh 保持一致。
           python -m PyInstaller --noconfirm --clean --windowed \
             --name "Health Float" --distpath dist --workpath build --specpath build \
-            --add-data "${ASSETS};assets" health_float.py
+            --add-data "${ASSETS};assets" \
+            --collect-all customtkinter \
+            health_float.py
       - name: Zip
         shell: bash
         run: |
           # 用 Python 的 zipfile，不依赖 zip 命令（Windows runner 上不一定有）
           # zip 落在 dist/ 里，才能被 upload-artifact 的 dist/*.zip 找到
-          python -c "import shutil; shutil.make_archive('dist/HealthFloat-Windows','zip','dist')"
+          #
+          # 只打包 base_dir='Health Float'：如果直接打包整个 dist/，
+          # 正在写入的 zip 会把自己也包进去（用户解压会看到一个
+          # 几十字节的空壳 HealthFloat-Windows.zip）。
+          python -c "import shutil; shutil.make_archive('dist/HealthFloat-Windows','zip', root_dir='dist', base_dir='Health Float')"
           ls -lh dist/*.zip
+          python -c "import zipfile; z=zipfile.ZipFile('dist/HealthFloat-Windows.zip'); names=z.namelist(); print('entries:', len(names)); print('self-included:', [n for n in names if n.endswith('.zip')])"
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-Windows
@@ -134,9 +145,15 @@ jobs:
         with:
           files: release/*
           generate_release_notes: true
-          # 不覆盖已存在的资产：手工上传的 universal2 DMG 优先保留，
-          # CI 出的同名文件只用于补齐缺失的平台包
-          overwrite_files: false
+          # 覆盖同名资产：三个平台的产物每次都从当前代码重新构建。
+          # 早期用 false 是为了保住「手工上传的 universal2 DMG」——
+          # 那个前提已经变了：
+          #   1. CI 装的是 python.org 官方 universal2 Python，
+          #      macOS 产物本身就是双架构（实测 x86_64 + arm64）；
+          #   2. 手工上传的 DMG 反而是本机 arm64 单架构，
+          #      Intel Mac 用户根本打不开。
+          # 所以现在让 CI 的产物覆盖，才能把 universal2 和最新修复一起发出去。
+          overwrite_files: true
           # workflow_dispatch 时没有 tag，必须显式指定；
           # push tag 时用触发该次运行的 tag
           tag_name: ${{ github.event.inputs.version != '' && format('v{0}', github.event.inputs.version) || github.ref_name }}
@@ -147,9 +164,9 @@ jobs:
 
             | 系统 | 文件 | 说明 |
             |------|------|------|
-            | macOS | `Health Float.dmg` | 拖进「应用程序」，双击运行 |
+            | macOS | `Health.Float.dmg` | 拖进「应用程序」，双击运行（Intel + Apple Silicon 通用）|
             | Windows | `HealthFloat-Windows.zip` | 解压后双击 `Health Float.exe` |
-            | Linux | `Health Float.AppImage` | `chmod +x` 后双击运行 |
+            | Linux | `Health.Float.AppImage` | `chmod +x` 后双击运行 |
 
             ### 第一次使用
             1. 双击打开

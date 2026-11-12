@@ -22,7 +22,7 @@
 
 | 系统 | 下载 | 大小 |
 |------|------|------|
-| **macOS**（Intel + Apple Silicon 通用） | `Health.Float.dmg` | 30 MB |
+| **macOS**（Intel + Apple Silicon 通用） | `Health.Float.dmg` | 36 MB |
 | **Windows** | `HealthFloat-Windows.zip` | 11 MB |
 | **Linux** | `Health.Float.AppImage` | 24 MB |
 
@@ -30,7 +30,7 @@
 
 ### macOS
 
-1. 下载 `Health Float.dmg`
+1. 下载 `Health.Float.dmg`
 2. 双击打开，把 `Health Float.app` 拖进「应用程序」文件夹
 3. 双击 `Health Float.app` —— 第一次会弹出设置窗口，用**上下箭头**选好洗澡和睡觉时间
 4. 想开机自动运行：**系统设置 → 通用 → 登录项 → 点 `+` → 选 Health Float.app**
@@ -47,8 +47,8 @@
 
 ### Linux
 
-1. 下载 `Health Float.AppImage`
-2. 终端执行 `chmod +x Health Float.AppImage`（只需一次）
+1. 下载 `Health.Float.AppImage`
+2. 终端执行 `chmod +x Health.Float.AppImage`（只需一次）
 3. 双击运行
 
 > 想看完整说明，去 [`docs/使用手册.md`](docs/使用手册.md)。
