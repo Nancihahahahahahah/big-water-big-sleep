@@ -69,6 +69,37 @@ class TestConfig(unittest.TestCase):
         cfg = hf.load_config()
         self.assertEqual(cfg["eye_minutes"], hf.DEFAULT_CONFIG["eye_minutes"])
 
+    def test_corrupt_config_survives_non_utf8_console(self):
+        """配置损坏时，即使控制台编码装不下中文也不能崩。
+
+        回归测试（CI 上 Windows 3.11 / 3.13 挂的就是这个）：
+        Windows 控制台默认 cp1252，except 分支里的 print 中文会抛
+        UnicodeEncodeError —— 本该「优雅降级」的路径反而变成崩溃。
+        """
+        class AsciiConsole:
+            """模拟 cp1252 控制台：写不下的字符直接抛异常。"""
+
+            encoding = "cp1252"
+
+            def write(self, text):
+                text.encode(self.encoding)      # 写不下就抛
+                return len(text)
+
+            def flush(self):
+                pass
+
+        real_stdout = sys.stdout
+        sys.stdout = AsciiConsole()
+        try:
+            with open(hf.CONFIG_PATH, "w", encoding="utf-8") as f:
+                f.write("{ 这不是合法 json ")
+            cfg = hf.load_config()                # 不应抛异常
+            self.assertEqual(cfg["eye_minutes"],
+                             hf.DEFAULT_CONFIG["eye_minutes"])
+            hf._log("[health-float] 中文日志也要能打出来")
+        finally:
+            sys.stdout = real_stdout
+
     def test_legacy_config_migrated(self):
         """程序目录的老配置应被迁移到新位置"""
         with open(hf.LEGACY_CONFIG_PATH, "w", encoding="utf-8") as f:

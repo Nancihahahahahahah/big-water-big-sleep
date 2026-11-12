@@ -54,6 +54,28 @@ SOUND = "/System/Library/Sounds/Ping.aiff"
 
 VERSION = "1.2.0"
 
+
+def _log(msg):
+    """安全地打印一条日志。
+
+    直接 print 中文会在 Windows 的默认 cp1252 控制台上抛
+    UnicodeEncodeError —— 而这些 print 几乎都在 except 分支里，
+    本意是「优雅降级」，结果打印本身又炸掉，把降级变成了崩溃
+    （CI 上 Windows 的两个配置测试就是这么挂的）。
+    所以：编码不支持就替换字符，绝不让日志影响主流程。
+    """
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        try:
+            enc = sys.stdout.encoding or "ascii"
+            print(msg.encode(enc, errors="replace").decode(enc, errors="replace"))
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 # 两次 tick 间隔超过这个秒数，判定为「电脑睡过了」，醒来的过期提醒静默重排
 MAX_RESUME_GAP = 300
 
@@ -96,9 +118,9 @@ def migrate_legacy_config():
             data = json.load(f)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"[health-float] 已把旧配置迁移到 {CONFIG_PATH}")
+        _log(f"[health-float] 已把旧配置迁移到 {CONFIG_PATH}")
     except (OSError, json.JSONDecodeError) as e:
-        print(f"[health-float] 旧配置迁移失败（忽略）: {e}")
+        _log(f"[health-float] 旧配置迁移失败（忽略）: {e}")
 
 DEFAULT_CONFIG = {
     "eye_minutes": 20,          # 每 N 分钟：看远方（0 = 关闭）
@@ -141,7 +163,7 @@ def load_config():
                 user_cfg = json.load(f)
             cfg.update({k: v for k, v in user_cfg.items() if k in DEFAULT_CONFIG})
         except (json.JSONDecodeError, OSError) as e:
-            print(f"[health-float] 配置读取失败，使用默认配置: {e}")
+            _log(f"[health-float] 配置读取失败，使用默认配置: {e}")
     return cfg
 
 
@@ -155,7 +177,7 @@ def save_config(cfg):
         os.replace(tmp, CONFIG_PATH)
         return True
     except OSError as e:
-        print(f"[health-float] 配置保存失败: {e}")
+        _log(f"[health-float] 配置保存失败: {e}")
         return False
 
 
@@ -995,7 +1017,7 @@ class FloatApp:
         try:
             self._animate_step()
         except Exception as e:
-            print(f"[health-float] 动画帧异常（已跳过）: {e}")
+            _log(f"[health-float] 动画帧异常（已跳过）: {e}")
         finally:
             self.root.after(50, self._animate)
 
@@ -1023,7 +1045,7 @@ class FloatApp:
         try:
             self._tick_step()
         except Exception as e:
-            print(f"[health-float] 秒帧异常（已跳过）: {e}")
+            _log(f"[health-float] 秒帧异常（已跳过）: {e}")
         finally:
             self.root.after(1000, self._tick)
 
