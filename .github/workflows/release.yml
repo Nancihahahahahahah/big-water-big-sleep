@@ -41,6 +41,15 @@ jobs:
         run: |
           hdiutil create -volname "Health Float" -srcfolder "dist/Health Float.app" -ov -format UDZO "dist/Health Float.dmg"
           lipo -info "dist/Health Float.app/Contents/MacOS/Health Float"
+          # 架构必须是 universal2 —— README 承诺「Intel + Apple Silicon 通用」。
+          # lipo -info 只是打印，不会让 CI 失败，所以这里显式断言：
+          # 单架构包发出去，Intel Mac 用户装完才发现打不开。
+          ARCHS="$(lipo -archs "dist/Health Float.app/Contents/MacOS/Health Float")"
+          echo "archs: $ARCHS"
+          case "$ARCHS" in
+            *x86_64*arm64*|*arm64*x86_64*) echo "    [OK] universal2 双架构" ;;
+            *) echo "[X] 不是 universal2（实际: $ARCHS）—— Intel Mac 用户无法运行"; exit 1 ;;
+          esac
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-macOS
@@ -70,6 +79,7 @@ jobs:
             --name "Health Float" --distpath dist --workpath build --specpath build \
             --add-data "${ASSETS};assets" \
             --collect-all customtkinter \
+            --exclude-module PIL \
             health_float.py
       - name: Zip
         shell: bash

@@ -89,6 +89,67 @@ class TestPackagingConsistency(unittest.TestCase):
         self.assertIn("assets", windows_job)
 
 
+class TestPillowExclusion(unittest.TestCase):
+    """Pillow 必须被排除在包外。
+
+    这条是被 CI 逼出来的：加了 --collect-all customtkinter 之后，
+    macOS 的 universal2 构建直接挂了：
+
+        IncompatibleBinaryArchError:
+          PIL/_avif.cpython-312-darwin.so is not a fat binary!
+
+    链条是：CTK 的 ctk_image.py 里 `from PIL import Image, ImageTk`
+    → PyInstaller 把整个 Pillow 拉进来
+    → Pillow 的编译扩展是单架构二进制
+    → universal2 构建要把它转双架构，直接失败。
+
+    本项目用 tk.PhotoImage 读 PNG，不需要 PIL；
+    CTK 那边的 PIL 是 try/except 包着的软依赖，排除后照常工作。
+    """
+
+    # 会跑 PyInstaller 的脚本
+    PACKERS = [
+        ".github/workflows/release.yml",
+        "build_macos_app.sh",
+        "build_windows.sh",
+        "build_windows.bat",
+        "linux-installer.sh",
+    ]
+
+    def test_every_packer_excludes_pillow(self):
+        """每个打包脚本都要 --exclude-module PIL。"""
+        for rel in self.PACKERS:
+            with self.subTest(packer=rel):
+                content = _read(rel)
+                self.assertIn(
+                    "--exclude-module PIL",
+                    content,
+                    "%s 没有排除 PIL —— universal2 构建会因 PIL 单架构扩展而失败" % rel,
+                )
+
+    def test_app_does_not_need_pillow(self):
+        """主程序不该直接依赖 PIL。
+
+        如果哪天真的需要了，这条测试会提醒你：
+        同时要处理 universal2 架构转换问题。
+        """
+        source = _read("health_float.py")
+        # tk.PhotoImage 是标准库自带的读图方式，不需要 PIL
+        self.assertNotIn("from PIL", source)
+        self.assertNotIn("import PIL", source)
+
+    def test_icon_asset_is_committed(self):
+        """图标必须在仓库里。
+
+        否则构建期要靠 Pillow 现场生成 —— 而 Pillow 的编译扩展
+        是单架构的，正是 universal2 构建失败的元凶。
+        """
+        self.assertTrue(
+            os.path.exists(os.path.join(REPO_ROOT, "assets", "app-icon.png")),
+            "assets/app-icon.png 缺失 —— 构建期就得依赖 Pillow",
+        )
+
+
 class TestWindowsZip(unittest.TestCase):
     """Windows 打包的 zip 结构。"""
 
@@ -153,6 +214,24 @@ class TestMacOSArchitecture(unittest.TestCase):
         release = _read(".github/workflows/release.yml")
         macos_job = release.split("macos:", 1)[1].split("windows:", 1)[0]
         self.assertIn("lipo", macos_job)
+
+    def test_release_asserts_universal2(self):
+        """架构必须是断言，不是打印。
+
+        README 承诺「Intel + Apple Silicon 通用」，
+        这个承诺要由 CI 强制执行 —— lipo -archs 拿到结果后
+        必须 exit 1 让构建失败，否则单架构包照发。
+        """
+        release = _read(".github/workflows/release.yml")
+        macos_job = release.split("macos:", 1)[1].split("windows:", 1)[0]
+        self.assertIn("lipo -archs", macos_job)
+        self.assertIn("x86_64", macos_job)
+        self.assertIn("arm64", macos_job)
+        self.assertIn(
+            "exit 1",
+            macos_job,
+            "架构检查没有 exit 1 —— 单架构包会被静默发布",
+        )
 
     def test_local_script_detects_universal2(self):
         """本地脚本要能识别 universal2 构建器。"""

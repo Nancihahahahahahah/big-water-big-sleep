@@ -43,9 +43,9 @@ else
     fi
 fi
 
-CTK_ARGS=()
+CTK_ARGS=(--exclude-module PIL)
 if [ "$HAVE_CTK" = "1" ]; then
-    CTK_ARGS=(--collect-all customtkinter)
+    CTK_ARGS+=(--collect-all customtkinter)
 fi
 
 echo "==> 打包 v${VER}"

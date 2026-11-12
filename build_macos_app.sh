@@ -49,12 +49,12 @@ fi
 
 if [ -z "$BUILD_PY" ]; then
     echo "❌ 未找到同时具备 tkinter 和 PyInstaller 的 Python。"
-    echo "   pip install pyinstaller pillow"
+    echo "   pip install pyinstaller customtkinter"
     echo "   （或用 HEALTH_FLOAT_BUILD_PYTHON=/path/to/python3 指定）"
     exit 1
 fi
 if ! "$BUILD_PY" -c "import PyInstaller" >/dev/null 2>&1; then
-    echo "❌ 缺少 PyInstaller。执行： $BUILD_PY -m pip install pyinstaller pillow"
+    echo "❌ 缺少 PyInstaller。执行： $BUILD_PY -m pip install pyinstaller customtkinter"
     exit 1
 fi
 ARCH=$(file "$BUILD_PY" 2>/dev/null | grep -o "universal binary" || echo "单架构")
@@ -107,13 +107,18 @@ if [ -f "assets/app-icon.png" ]; then
     cp "assets/app-icon.png" "$ICON_DIR/icon.png"
     echo "    使用仓库内图标 assets/app-icon.png"
 else
-"$BUILD_PY" - <<'PYEOF'
+    # 兜底：仓库里没有图标时才现场生成。
+    # 注意 Pillow 的编译扩展是单架构的，universal2 打包时不能进包
+    # （见下面 CTK_ARGS 的注释）—— 所以这里只在**构建期**用一下，
+    # 生成完的 PNG 是纯数据，进包没问题。
+    "$BUILD_PY" - <<'PYEOF'
 import os
 try:
     from PIL import Image, ImageDraw
 except ImportError:
-    print("    (无 Pillow，跳过图标生成)")
-    raise SystemExit(0)
+    print("    [!] 无 Pillow 且仓库内也没有 assets/app-icon.png —— 无法生成图标")
+    print("        pip install pillow，或把一张 1024x1024 PNG 放到 assets/app-icon.png")
+    raise SystemExit(1)
 
 S = 1024
 im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -149,9 +154,21 @@ mkdir -p "$BUILD_DIR"
 # --add-data 的源路径必须是绝对路径（specpath 会改变相对路径的解析基准）
 # CTK 参数只在装了 customtkinter 时才加 —— 没装的话 PyInstaller
 # 会因为找不到模块直接报错。
-CTK_ARGS=()
+#
+# --exclude-module PIL 是必须的，不是可选优化：
+# CustomTkinter 的 ctk_image.py 会 `from PIL import Image, ImageTk`，
+# 于是 PyInstaller 把整个 Pillow 拉进来。而 Pillow 的编译扩展
+# （_avif.so 等）是**单架构**二进制，universal2 构建时 PyInstaller
+# 要把它转成双架构，直接报错：
+#   IncompatibleBinaryArchError: PIL/_avif.cpython-312-darwin.so
+#   is not a fat binary!
+#
+# 本项目根本不需要 PIL：图片一律用 tk.PhotoImage 读 PNG。
+# CTK 那边 PIL 是 try/except 包着的软依赖，排除后照常工作
+# （已验证：排除 PIL 后 CTK 面板正常渲染，主题正常加载）。
+CTK_ARGS=(--exclude-module PIL)
 if [ "$HAVE_CTK" = "1" ]; then
-    CTK_ARGS=(--collect-all customtkinter)
+    CTK_ARGS+=(--collect-all customtkinter)
 fi
 if [ -n "$TARGET_ARCH" ]; then
     "$BUILD_PY" -m PyInstaller \

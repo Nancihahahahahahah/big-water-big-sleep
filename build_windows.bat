@@ -41,6 +41,9 @@ set "STAMP=%RANDOM%%RANDOM%"
 set "BUILDDIR=%CD%\.build\v%STAMP%"
 mkdir "%BUILDDIR%" 2>nul
 
+rem --exclude-module PIL：CTK 的 ctk_image.py 会 from PIL import Image，
+rem 把整个 Pillow 拖进来；Pillow 的编译扩展是单架构二进制，
+rem 打包时会失败。本项目用 tk.PhotoImage 读 PNG，不需要 PIL。
 python -m PyInstaller --noconfirm --windowed ^
     --name "Health Float" ^
     --distpath "%BUILDDIR%\dist" ^
@@ -48,6 +51,7 @@ python -m PyInstaller --noconfirm --windowed ^
     --specpath "%BUILDDIR%" ^
     --add-data "%CD%\assets;assets" ^
     %CTKARG% ^
+    --exclude-module PIL ^
     "%CD%\health_float.py"
 
 if errorlevel 1 (
