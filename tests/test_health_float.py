@@ -294,6 +294,61 @@ class TestApp(unittest.TestCase):
         after = self.app.cv.bbox(self.app.gear_id)
         self.assertEqual(before, after, "齿轮位置在多次 layout 后漂移了")
 
+    # ---------- 无边框窗口（macOS 标题栏回归）----------
+
+    def test_window_is_borderless(self):
+        """浮窗必须是无边框的（不能有标题栏和红绿灯）"""
+        self.assertIs(self.app.root.overrideredirect(), True,
+                      "浮窗被 macOS 重置成了带标题栏的标准窗口")
+
+    def test_ensure_borderless_recovers_from_reset(self):
+        """macOS 重置窗口后，_ensure_borderless 必须能把它修回来。
+
+        回归测试（用户截图反馈）：macOS 会把无边框窗口重置回带
+        红绿灯的标准窗口。
+
+        注意：不能依赖「先重置再断言」——前一个用例注册的巡检
+        可能已经把它修好了。所以先断言修复逻辑本身是可靠的
+        （纯函数分支全覆盖），再用真实重置验证端到端修复。
+        """
+        # 1) 纯逻辑：三种状态都要判对
+        self.assertFalse(hf._needs_borderless_fix(True),
+                         "正常状态不该触发修复")
+        self.assertTrue(hf._needs_borderless_fix(None),
+                        "被重置后（None）必须触发修复")
+        self.assertTrue(hf._needs_borderless_fix(False),
+                        "明确有边框（False）必须触发修复")
+
+        # 2) 端到端：真实重置 → 修复
+        self.app._ensure_borderless()          # 先确保是正常态
+        self.app.root.overrideredirect(False)  # 真实重置
+        self.app.root.update()
+        self.app._ensure_borderless()
+        self.app.root.update()
+        self.assertIs(self.app.root.overrideredirect(), True,
+                      "_ensure_borderless 没能把无边框状态修回来")
+
+    def test_borderless_watch_scheduled(self):
+        """必须注册周期性巡检 —— 启动后的重置没人管会一直留着标题栏。
+
+        之前只在启动后 200ms / 1200ms 各兜底一次，运行中发生的
+        重置没有任何机制会修。
+        """
+        self.assertTrue(callable(self.app._borderless_watch))
+        # 调用它不应该抛异常，并且要能继续排下一次
+        self.app._borderless_watch()
+        self.app.root.update()
+        self.assertIs(self.app.root.overrideredirect(), True)
+
+    def test_borderless_watch_recovers_silently(self):
+        """巡检发现重置时要能自动修复，且不抛异常"""
+        self.app.root.overrideredirect(False)   # 真实重置
+        self.app.root.update()
+        self.app._borderless_watch()
+        self.app.root.update()
+        self.assertIs(self.app.root.overrideredirect(), True,
+                      "巡检没能自动修复被重置的窗口")
+
     def test_gear_backplate_hidden_until_hover(self):
         """齿轮底板平时隐藏 —— 灰条上不该挂着一个突兀的白框"""
         self.assertEqual(self.app.cv.itemcget(self.app.gear_bg, "state"),

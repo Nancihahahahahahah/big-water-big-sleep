@@ -35,6 +35,21 @@ except ImportError:      # pragma: no cover - 环境没装 CTK 时的降级路�
     ctk = None
     HAVE_CTK = False
 
+def _needs_borderless_fix(state):
+    """判断窗口是否需要重新套上无边框。
+
+    `root.overrideredirect()` 的返回值有三个可能：
+      True  = 正常（无边框）
+      None  = **被 macOS 重置了**（注意不是 False！）
+      False = 明确设为有边框
+
+    实测 macOS 把无边框窗口重置回标准窗口后，返回的是 None。
+    所以判断必须写成「不是 True」，不能用 `== False`。
+    抽成纯函数是为了能脱离 GUI 直接测这几条分支。
+    """
+    return state is not True
+
+
 def _base_dir():
     """程序根目录。
 
@@ -769,10 +784,14 @@ class FloatApp:
         except (tk.TclError, ValueError):
             pass
         root.configure(bg=C_CABIN)
-        # macOS 有时会把无边框窗口重置回带红绿灯的标准窗口
+        # macOS 有时会把无边框窗口重置回带红绿灯的标准窗口。
+        # 三重保险：<Map> 事件（窗口重映射时立刻修）、启动后两次
+        # 短延迟（覆盖启动竞态）、以及 2 秒一次的持续巡检
+        # （覆盖运行中任何时刻的重置）。
         root.bind("<Map>", self._ensure_borderless, add="+")
         root.after(200, self._ensure_borderless)
         root.after(1200, self._ensure_borderless)
+        root.after(2000, self._borderless_watch)
 
         self.w, self.h = BUBBLE
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -797,10 +816,35 @@ class FloatApp:
         root.after(1000, self._tick)
 
     def _ensure_borderless(self, *_):
+        """保证窗口永远没有标题栏 / 红绿灯。
+
+        macOS 会时不时把 overrideredirect 窗口重置回标准窗口
+        （表现就是浮窗变成可拖标题栏的普通窗口）。
+        注意：重置后 `overrideredirect()` 返回的是 None 而不是 False，
+        所以判断必须写成「不是 True」。
+
+        兜底不能只是启动时跑一两次 —— 实测重置发生在启动之后，
+        那之后没有任何机制会把它修回来，用户就看到一个带标题栏的
+        浮窗。所以改成周期性巡检（_borderless_watch）。
+        """
         try:
-            if not self.root.overrideredirect():
+            if _needs_borderless_fix(self.root.overrideredirect()):
                 self.root.overrideredirect(True)
             self.root.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+
+    def _borderless_watch(self):
+        """周期性巡检无边框状态（每 2 秒一次）。
+
+        为什么要持续巡检而不是「发现重置就修」：
+        macOS 的重置是静默的，窗口样式已经变了，但 Tk 侧不一定
+        收到任何事件。只靠 <Map> 绑定 + 启动时的一两次 after，
+        覆盖不到运行中发生的重置。
+        """
+        self._ensure_borderless()
+        try:
+            self.root.after(2000, self._borderless_watch)
         except tk.TclError:
             pass
 
