@@ -301,6 +301,21 @@ class TestApp(unittest.TestCase):
         self.assertIs(self.app.root.overrideredirect(), True,
                       "浮窗被 macOS 重置成了带标题栏的标准窗口")
 
+    def test_window_placed_at_default_position(self):
+        """浮窗必须落在屏幕右下角，不能停在 Tk 的默认层叠位置。
+
+        回归测试：macOS Tk 会**静默忽略**窗口映射前 geometry() 里的
+        位置参数 —— 窗口会停在 (5,30) 这种默认层叠位置，
+        而不是我们算好的右下角。必须在窗口显示后再设一次位置。
+        """
+        self.app._place_at_default()
+        self.root.update()
+        x, y = self.root.winfo_x(), self.root.winfo_y()
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        self.assertEqual((x, y), (sw - 200, sh - 290),
+                         f"浮窗位置不对: ({x},{y})，应为 ({sw-200},{sh-290})")
+
     def test_ensure_borderless_recovers_from_reset(self):
         """macOS 重置窗口后，_ensure_borderless 必须能把它修回来。
 

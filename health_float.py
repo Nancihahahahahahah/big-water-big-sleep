@@ -797,6 +797,12 @@ class FloatApp:
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
         self.x, self.y = sw - 200, sh - 290
         root.geometry(f"{self.w}x{self.h}+{self.x}+{self.y}")
+        # 关键：macOS Tk 上，窗口映射（显示）之前调 geometry()，
+        # 其中的位置参数会被静默忽略 —— 窗口会停在 Tk 的默认层叠
+        # 位置 (5,30) 而不是我们算好的右下角。
+        # 实测：映射前设 → (5,30)；映射后再设一次 → (1240,610)。
+        # 所以这里先设尺寸（等窗口显示），稍后再设一次位置。
+        root.after(120, self._place_at_default)
 
         self.cv = tk.Canvas(root, width=self.w, height=self.h,
                             bg=C_CABIN, highlightthickness=0, takefocus=0)
@@ -814,6 +820,18 @@ class FloatApp:
 
         root.after(50, self._animate)
         root.after(1000, self._tick)
+
+    def _place_at_default(self):
+        """把窗口放到屏幕右下角。
+
+        必须在窗口已经显示之后调用 —— macOS Tk 会忽略映射前
+        geometry() 里的位置参数（窗口会停在默认层叠位置 5,30）。
+        """
+        try:
+            if self.root.winfo_viewable():
+                self.root.geometry(f"+{self.x}+{self.y}")
+        except tk.TclError:
+            pass
 
     def _ensure_borderless(self, *_):
         """保证窗口永远没有标题栏 / 红绿灯。
@@ -1474,9 +1492,9 @@ def main():
         root.wait_window(dlg)
         save_config(cfg)          # 用户直接关窗也会存下默认值
         root.deiconify()
-        root.geometry(f"{BUBBLE[0]}x{BUBBLE[1]}+"
-                      f"{root.winfo_screenwidth() - 200}+"
-                      f"{root.winfo_screenheight() - 290}")
+        # 尺寸先设好；位置要等 FloatApp 创建后由它统一处理
+        # （macOS Tk 会忽略映射前的位置参数）。
+        root.geometry(f"{BUBBLE[0]}x{BUBBLE[1]}")
     FloatApp(root, cfg)
     root.mainloop()
 
