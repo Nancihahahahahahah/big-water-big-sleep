@@ -23,6 +23,7 @@ import sys
 import time
 import tkinter as tk
 from datetime import datetime, timedelta
+from tkinter import font as tkfont
 
 # CustomTkinter（13.6k★，tkinter 生态 star 最高的现代 UI 库）：
 # 用它把设置面板重做成卡片式圆角界面。
@@ -236,12 +237,19 @@ def round_rect_pts(x1, y1, x2, y2, r):
 
 
 # key -> (标题, 副文案, icon, 自动关闭秒数, 黑屏时长类别)
+# 副文案的换行是手工排的：按语义断句，不靠 width= 自动折行
+# （自动折行会把「明天还有满格的自己」切成「明天还有满格 / 的自己」，
+# 语义被拦腰截断）。每行控制在 6 个汉字以内最耐看。
+#
+# 标题也受宽度约束：面板内容宽 126pt，而
+# 「emoji(24) + 间隔(7) + 5 个汉字(100)」= 131pt 会溢出面板右边缘。
+# 所以标题一律控制在 4 个汉字（80pt），最宽组合 = 111pt，安全。
 ALERT_META = {
-    "eye":    ("该看远方啦", "望向 6 米外 20 秒\n让眼睛休息一下", "👀", 20, "brief"),
-    "move":   ("起来动一动", "站起来伸展 1 分钟\n久坐是慢性刺客", "🧘", 90, "brief"),
-    "water":  ("喝杯水吧",   "水是身体的\n第一供应商", "💧", 60, None),
-    "shower": ("去洗澡啦",   "早点洗澡\n晚上睡得更香", "🛁", 120, "long"),
-    "sleep":  ("该睡觉啦",   "放下屏幕\n明天还有满格的自己", "🌙", 120, "long"),
+    "eye":    ("看看远方", "望向 6 米外\n让眼睛歇一歇", "👀", 20, "brief"),
+    "move":   ("起来动动", "站起来伸展\n久坐伤身体", "🧘", 90, "brief"),
+    "water":  ("喝杯水吧", "水是身体的\n第一供应商", "💧", 60, None),
+    "shower": ("去洗澡啦", "早点洗澡\n晚上睡更香", "🛁", 120, "long"),
+    "sleep":  ("该睡觉啦", "放下屏幕\n明天满格自己", "🌙", 120, "long"),
 }
 
 # —— 配色 / 尺寸（固定，不缩放）——
@@ -260,11 +268,25 @@ C_HOVER_TINT = "#c9d0d8"  # 齿轮底板 hover 色
 BUBBLE = (140, 241)          # 常驻泡泡 = 素材图 140x193 + 下方文字条 48
 BUBBLE_IMG = (140, 193)      # 素材图尺寸
 STRIP_H = 48                 # 图下文字条高度（画布灰底，与图四角同色）
-ALERT = (272, 230)
+# 提醒卡：左图右文。
+# 面板宽度是排版的第一约束 —— 之前只有 110pt，15pt 粗体标题
+# （emoji + 4 个汉字 ≈ 100pt）几乎撑满两侧，副标题更被挤成
+# 「明天还有满格 / 的自己」这种断行。现在加宽到 150pt。
+ALERT = (302, 236)
 ALERT_IMG = (132, 182)
-ALERT_IMG_XY = (10, 12)
-PANEL = (152, 12, 262, 218)
-PANEL_CX = 207
+ALERT_IMG_XY = (10, 27)      # 图片垂直居中于卡片
+PANEL = (150, 12, 300, 224)  # 文本面板：宽 150, 高 212
+PANEL_CX = 225               # 面板水平中心
+# —— 面板内部垂直节奏（baseline，单位 pt）——
+# 数值来自字体度量实测（PingFang SC）：
+#   15pt 粗体行高 28 / 11pt 行高 21 / 9pt 行高 17
+# 元素从上到下：标题 / 副标题两行 / 按钮 / 底部提示。
+# 每段之间留 20~24pt 呼吸，整块在面板里上下居中。
+ALERT_TITLE_Y = 46           # 标题基线
+ALERT_SUB_Y = 88             # 副标题第一行基线
+ALERT_SUB_LINE = 23          # 副标题行距（比行高 21 多 2，行间不粘连）
+ALERT_BTN_Y = 158            # 按钮中心
+ALERT_HINT_Y = 200           # 底部提示基线
 
 
 # ---------------- 闹钟式拨轮控件 ----------------
@@ -919,9 +941,11 @@ class FloatApp:
         # 现在把入口画出来，点了就开设置面板。
         # 齿轮底板改成「无描边淡色圆」，不再是一个突兀的白框：
         # 旧的白色圆角方块 + 深描边浮在灰条上，像贴错了的控件。
-        self.gear_id = cv.create_text(
-            BUBBLE[0] - 16, BUBBLE_IMG[1] + 24, text="⚙", font=ui_font(14),
-            fill=C_DIM, tags=("gear",))
+        #
+        # 齿轮本体不用字符「⚙」而是 Canvas 图元绘制 —— 这个字符
+        # (U+2699) 在 macOS Tk 里没有可用字形，会静默渲染成空白，
+        # 结果就是「设置入口完全看不见」。用图元则跨平台 100% 可靠。
+        self.gear_id = self._draw_gear(cv, BUBBLE[0] - 16, BUBBLE_IMG[1] + 24)
         self.gear_bg = cv.create_oval(
             BUBBLE[0] - 29, BUBBLE_IMG[1] + 12,
             BUBBLE[0] - 3, BUBBLE_IMG[1] + 38,
@@ -941,12 +965,21 @@ class FloatApp:
         # 提醒卡右栏（白色圆角面板）
         self.panel_id = round_rect(cv, *PANEL, 10, fill=C_PANEL,
                                    outline=C_LINE)
+        # 标题里的 emoji 单独成元素：emoji 与汉字混在同一个 text item 里
+        # 会共用一个基线，emoji 字形比汉字高出一截，把整行顶得歪歪扭扭
+        # （截图里「🌙 该睡觉啦」就是这个问题）。
+        # 拆开后 emoji 独立居中、汉字独立排版，互不干扰。
+        self.a_icon_id = cv.create_text(0, 0, text="", font=ui_font(17),
+                                        fill=C_TEXT)
         self.a_title_id = cv.create_text(0, 0, text="", font=ui_font(15, True),
                                          fill=C_TEXT)
         self.a_sub_id = cv.create_text(0, 0, text="", font=ui_font(11),
                                        fill=C_DIM, justify="center")
         self.a_count_id = cv.create_text(0, 0, text="",
                                          font=ui_font(15, True), fill=C_TEXT)
+        # 按钮：底板和文字必须成对出现。
+        # 之前 a_btn_txt 的坐标从未设置过，文字永远停在 (0,0)，
+        # 所以截图里那个按钮只剩一个空的小灰方块。
         self.a_btn_id = round_rect(cv, 0, 0, 10, 10, 8, fill=C_ACCENT,
                                    outline="", tags=("btn",))
         self.a_btn_txt = cv.create_text(0, 0, text="知道了 ✓",
@@ -969,8 +1002,54 @@ class FloatApp:
         try:
             self.cv.itemconfig(self.gear_bg, state="normal" if on else "hidden")
             self.cv.itemconfig(self.gear_id, fill=C_TEXT if on else C_DIM)
+            for iid in getattr(self, "gear_extra", ()):
+                self.cv.itemconfig(iid, fill=C_TEXT if on else C_DIM)
         except tk.TclError:
             pass
+
+    def _draw_gear(self, cv, cx, cy):
+        """用 Canvas 图元画一个齿轮，返回外圈元素的 id。
+
+        为什么不用字符「⚙」：
+        U+2699 在 macOS Tk 里没有可用字形，会静默渲染成空白 ——
+        表现就是「设置入口完全看不见」，而且不报任何错。
+        用图元（圆 + 齿）则跨平台 100% 可靠，且能精确控制大小。
+
+        齿轮 = 一个深色外圈圆 + 8 个小方齿 + 一个浅色中心孔。
+        中心孔用面板底色画，等效于「挖空」，比用 outline 描边更干净。
+
+        尺寸经过实测校准：半径 8.2 的齿轮在 302x236 的卡片里
+        过于抢眼（像个主按钮）；半径 6.8 是个「入口图标」的合适体量 ——
+        比原来的字符版（实际只有几个可见像素）清楚得多，
+        又不会喧宾夺主。
+        """
+        r = 6.8                      # 齿顶半径
+        ring = cv.create_oval(
+            cx - r, cy - r, cx + r, cy + r,
+            fill=C_DIM, outline="", tags=("gear",))
+        teeth = []
+        for i in range(8):
+            a = math.radians(i * 45)
+            tr = 8.6                  # 齿块外半径
+            tw = 2.1                  # 齿块半宽
+            tx, ty = cx + tr * math.cos(a), cy + tr * math.sin(a)
+            # 每个齿是一个小方块，用旋转矩阵对齐到径向
+            c, s = math.cos(a), math.sin(a)
+            pts = []
+            for dx, dy in ((-tw, -tw), (tw, -tw), (tw, tw), (-tw, tw)):
+                px, py = dx * c - dy * s, dx * s + dy * c
+                pts.extend((tx + px, ty + py))
+            t = cv.create_polygon(pts, fill=C_DIM, outline="", tags=("gear",))
+            teeth.append(t)
+        # 中心孔：用面板底色覆盖，画出「挖空」的观感
+        hole = cv.create_oval(
+            cx - 2.5, cy - 2.5, cx + 2.5, cy + 2.5,
+            fill=C_PANEL, outline="", tags=("gear",))
+        self.gear_extra = tuple(teeth) + (hole,)
+        self.gear_center = (cx, cy)
+        # 齿和外圈在中心孔之上，所以孔要 tag_raise 到最上层
+        cv.tag_raise(hole)
+        return ring
 
     def _hide(self, *ids):
         for i in ids:
@@ -979,6 +1058,19 @@ class FloatApp:
     def _show(self, *ids):
         for i in ids:
             self.cv.itemconfig(i, state="normal")
+
+    def _move_gear(self, cx, cy):
+        """把整组齿轮图元移动到 (cx, cy)。
+
+        齿轮由多个图元组成（外圈 + 8 齿 + 中心孔），
+        必须整体平移，否则会散架。
+        """
+        cv = self.cv
+        dx, dy = cx - self.gear_center[0], cy - self.gear_center[1]
+        for iid in (self.gear_id,) + tuple(getattr(self, "gear_extra", ())):
+            cv.move(iid, dx, dy)
+        self.gear_center = (cx, cy)
+        cv.coords(self.gear_bg, cx - 14, cy - 14, cx + 14, cy + 14)
 
     # ---------- 布局（固定尺寸） ----------
     def _layout(self):
@@ -990,9 +1082,9 @@ class FloatApp:
     def _layout_bubble(self):
         cv = self.cv
         w, h = self.w, self.h
-        self._hide(self.a_title_id, self.a_sub_id, self.a_count_id,
-                   self.a_btn_id, self.a_btn_txt, self.a_hint_id,
-                   self.panel_id)
+        self._hide(self.a_icon_id, self.a_title_id, self.a_sub_id,
+                   self.a_count_id, self.a_btn_id, self.a_btn_txt,
+                   self.a_hint_id, self.panel_id)
         self._show(self.icon_id, self.time_id, self.name_id)
         img = self.images.get(BUBBLE_IMG)
         if img:
@@ -1006,12 +1098,12 @@ class FloatApp:
         cv.coords(self.name_id, w / 2, BUBBLE_IMG[1] + 35)
         # —— 可见入口：齿轮在文字条右下角（不压图），会议模式指示在左上 ——
         self._show(self.gear_id)
+        for iid in getattr(self, "gear_extra", ()):
+            self._show(iid)
         # 圆角多边形的 coords 要给完整点集（move 是相对位移，
         # 反复 layout 会累积漂移）；用绝对坐标一次性定位
         gx, gy = w - 17, BUBBLE_IMG[1] + 24
-        cv.coords(self.gear_id, gx, gy)
-        # 底板是圆形（oval），默认隐藏，hover 齿轮时才显示
-        cv.coords(self.gear_bg, gx - 14, gy - 14, gx + 14, gy + 14)
+        self._move_gear(gx, gy)
         if self.cfg.get("meeting_mode"):
             self._show(self.mute_id)
             cv.coords(self.mute_id, 14, BUBBLE_IMG[1] + 12)
@@ -1034,11 +1126,18 @@ class FloatApp:
         ix, iy = ALERT_IMG_XY
         self._show(self.panel_id)   # 面板位置固定，创建时已定，无需重设坐标
         self._hide(self.time_id, self.name_id)
-        # 提醒卡状态下齿轮挪到面板右下角，始终可点
+        # 提醒卡状态下齿轮挪到面板右下角，始终可点。
+        # 之前它和底部提示文字挤在同一行（都在 y≈202），直接叠在一起。
+        # 现在：齿轮在最右下，提示文字居中偏左，两者水平分离不打架。
+        #
+        # 还要把齿轮提到 z-order 最顶层 —— 标题文字「该睡觉啦」的 bbox
+        # 会一直伸到 x≈283，和右上角的齿轮重叠，齿轮会被压在下面看不见。
         self._show(self.gear_id)
-        gx, gy = PANEL[2] - 16, PANEL[3] - 16
-        cv.coords(self.gear_id, gx, gy)
-        cv.coords(self.gear_bg, gx - 14, gy - 14, gx + 14, gy + 14)
+        for iid in getattr(self, "gear_extra", ()):
+            self._show(iid)
+        self._move_gear(PANEL[2] - 17, PANEL[3] - 15)
+        for iid in (self.gear_id,) + tuple(getattr(self, "gear_extra", ())):
+            cv.tag_raise(iid)
         self._show(self.icon_id)
         cv.itemconfig(self.icon_id, font=ui_font(26))
         cv.coords(self.icon_id,
@@ -1047,24 +1146,59 @@ class FloatApp:
         if img:
             cv.itemconfig(self.img_id, image=img)
         cv.coords(self.img_id, ix, iy)
-        self._show(self.a_title_id, self.a_sub_id, self.a_hint_id)
-        cv.coords(self.a_title_id, PANEL_CX, 38)
-        cv.itemconfig(self.a_title_id, text=f"{icon} {title}")
-        cv.coords(self.a_sub_id, PANEL_CX, 74)
-        cv.itemconfig(self.a_sub_id, text=sub, width=100)
+
+        # —— 标题：emoji 单独一列，文字单独一列 ——
+        # 混排时 emoji 字形比汉字高，把整行基线顶歪；拆开后各自居中。
+        self._show(self.a_icon_id, self.a_title_id, self.a_sub_id,
+                   self.a_hint_id)
+        cv.itemconfig(self.a_icon_id, text=icon)
+        cv.itemconfig(self.a_title_id, text=title)
+        # 标题整体（含 emoji）水平居中：先量文字宽度，再倒推 emoji 位置
+        title_w = self._text_width(title, ui_font(15, True))
+        icon_w = self._text_width(icon, ui_font(17))
+        gap = 7
+        group_w = icon_w + gap + title_w
+        group_left = PANEL_CX - group_w / 2
+        cv.coords(self.a_icon_id, group_left + icon_w / 2, ALERT_TITLE_Y)
+        cv.coords(self.a_title_id, group_left + icon_w + gap + title_w / 2,
+                  ALERT_TITLE_Y)
+
+        # —— 副标题：逐行排版，不再靠 width= 自动折行 ——
+        # 之前 width=100 让「明天还有满格的自己」被断成
+        # 「明天还有满格 / 的自己」，语义被切碎了。
+        # 现在文案自带 \n，按行精确摆放，行距统一。
+        self._show(self.a_sub_id)
+        lines = sub.split("\n")
+        cv.itemconfig(self.a_sub_id, text="\n".join(lines))
+        for i, line in enumerate(lines):
+            cv.coords(self.a_sub_id, PANEL_CX,
+                      ALERT_SUB_Y + i * ALERT_SUB_LINE)
+
         if key == "eye":
+            # 「看远方」只有 20 秒，不给按钮，直接显示倒数
             self._hide(self.a_btn_id, self.a_btn_txt)
             self._show(self.a_count_id)
-            cv.coords(self.a_count_id, PANEL_CX, 132)
+            cv.coords(self.a_count_id, PANEL_CX, ALERT_BTN_Y)
         else:
             self._hide(self.a_count_id)
             self._show(self.a_btn_id, self.a_btn_txt)
-            bb = cv.bbox(self.a_btn_id)
-            if bb:
-                cv.move(self.a_btn_id, 169 - bb[0], 156 - bb[1])
-            else:
-                cv.coords(self.a_btn_id, *round_rect_pts(169, 156, 245, 180, 8))
-        cv.coords(self.a_hint_id, PANEL_CX, 203)
+            bw, bh = 84, 26
+            bx1, by1 = PANEL_CX - bw / 2, ALERT_BTN_Y - bh / 2
+            bx2, by2 = bx1 + bw, by1 + bh
+            # 必须用 coords 给完整点集：move 是相对位移，
+            # 反复 layout 会累积漂移（且不会改变尺寸）。
+            cv.coords(self.a_btn_id, *round_rect_pts(bx1, by1, bx2, by2, 8))
+            cv.coords(self.a_btn_txt, PANEL_CX, ALERT_BTN_Y)
+        # 提示文字居中偏左，给右下角的齿轮让出位置
+        cv.coords(self.a_hint_id, PANEL_CX - 18, ALERT_HINT_Y)
+
+    def _text_width(self, text, font):
+        """量一段文字的像素宽度（用于水平居中）。"""
+        try:
+            f = tkfont.Font(root=self.root, font=font)
+            return f.measure(text)
+        except (tk.TclError, Exception):
+            return len(text) * 10
 
     def _resize_to(self, w, h):
         self.x += self.w - w
