@@ -385,6 +385,25 @@ class TestReleaseAssets(unittest.TestCase):
         readme = _read("README.md")
         self.assertIn("Intel + Apple Silicon 通用", readme)
 
+    def test_release_dmg_has_applications_symlink(self):
+        """发布出去的 DMG 里要有指向 /Applications 的软链。
+
+        软链是用户「把 app 拖进应用程序」的入口。
+        之前 release.yml 直接 hdiutil -srcfolder "dist/Health Float.app"，
+        软链没有 —— 而本地 build_macos_app.sh 生成的 DMG 是有的，
+        两边不一致，发布出去的那份反而少了这个入口。
+        """
+        release = _read(".github/workflows/release.yml")
+        dmg_step = release.split("- name: Make DMG", 1)[1].split(
+            "- name: Verify package contents", 1
+        )[0]
+        self.assertIn(
+            "ln -sfn /Applications",
+            dmg_step,
+            "发布用的 DMG 没有 /Applications 软链 —— "
+            "用户打开 DMG 少了一个拖拽入口",
+        )
+
 
 class TestVersionConsistency(unittest.TestCase):
     """版本号一致性。"""
@@ -395,6 +414,33 @@ class TestVersionConsistency(unittest.TestCase):
         match = re.search(r'^VERSION = "([^"]+)"', content, re.M)
         self.assertIsNotNone(match, "找不到 VERSION 常量")
         self.assertRegex(match.group(1), r"^\d+\.\d+\.\d+$")
+
+    def test_readme_version_matches_code(self):
+        """README 下载链接里的版本号必须和代码里的 VERSION 一致。
+
+        改版本号时忘了改 README，用户点进去下载到的就是旧版 ——
+        而且链接指向的 tag 可能根本不存在。
+        """
+        content = _read("health_float.py")
+        match = re.search(r'^VERSION = "([^"]+)"', content, re.M)
+        version = match.group(1)
+        readme = _read("README.md")
+
+        self.assertIn(
+            "v%s" % version,
+            readme,
+            "README 里找不到 v%s —— 下载链接指向的 tag 可能不存在" % version,
+        )
+
+        # README 里出现的所有 releases/tag 链接，都必须指向当前版本
+        tags = re.findall(r"releases/tag/(v[\d.]+)", readme)
+        self.assertTrue(tags, "README 里没有 releases/tag 下载链接")
+        for tag in tags:
+            self.assertEqual(
+                tag,
+                "v%s" % version,
+                "README 的下载链接指向 %s，但代码版本是 %s" % (tag, version),
+            )
 
 
 if __name__ == "__main__":

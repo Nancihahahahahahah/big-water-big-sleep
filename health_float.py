@@ -68,7 +68,7 @@ BASE_DIR = _base_dir()
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 SOUND = "/System/Library/Sounds/Ping.aiff"
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 
 def _log(msg):

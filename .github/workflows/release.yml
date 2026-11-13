@@ -39,7 +39,19 @@ jobs:
           ./build_macos_app.sh
       - name: Make DMG
         run: |
-          hdiutil create -volname "Health Float" -srcfolder "dist/Health Float.app" -ov -format UDZO "dist/Health Float.dmg"
+          # DMG 里要带一个指向 /Applications 的软链，
+          # 用户打开 DMG 就能把 app 拖到「应用程序」那个图标上。
+          #
+          # 直接 hdiutil -srcfolder "dist/Health Float.app" 只会把 app 装进去，
+          # 软链没有 —— 发布出去的 DMG 就少了这个拖拽入口
+          # （本地 build_macos_app.sh 生成的 DMG 是有的，两边不一致）。
+          # 所以这里用暂存目录，跟本地脚本的做法保持一致。
+          DMG_ROOT="$RUNNER_TEMP/dmg-root"
+          mkdir -p "$DMG_ROOT"
+          rsync -a --delete "dist/Health Float.app/" "$DMG_ROOT/Health Float.app/"
+          ln -sfn /Applications "$DMG_ROOT/Applications"
+          ls -la "$DMG_ROOT"
+          hdiutil create -volname "Health Float" -srcfolder "$DMG_ROOT" -ov -format UDZO "dist/Health Float.dmg"
           lipo -info "dist/Health Float.app/Contents/MacOS/Health Float"
           # 架构必须是 universal2 —— README 承诺「Intel + Apple Silicon 通用」。
           # lipo -info 只是打印，不会让 CI 失败，所以这里显式断言：

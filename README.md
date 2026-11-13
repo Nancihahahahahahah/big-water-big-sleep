@@ -18,11 +18,11 @@
 
 ### 📦 直接下载成品（推荐）
 
-**[⬇️ 点这里下载 v1.2.0](https://github.com/Nancihahahahahahah/big-water-big-sleep/releases/tag/v1.2.0)**
+**[⬇️ 点这里下载 v1.2.1](https://github.com/Nancihahahahahahah/big-water-big-sleep/releases/tag/v1.2.1)**
 
 | 系统 | 下载 | 大小 |
 |------|------|------|
-| **macOS**（Intel + Apple Silicon 通用） | `Health.Float.dmg` | 36 MB |
+| **macOS**（Intel + Apple Silicon 通用） | `Health.Float.dmg` | 23 MB |
 | **Windows** | `HealthFloat-Windows.zip` | 11 MB |
 | **Linux** | `Health.Float.AppImage` | 24 MB |
 
