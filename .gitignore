@@ -18,3 +18,4 @@ dmg_root/
 # 排版预览截图（scripts/preview_alert.py 的产物，随时可重新生成）
 scripts/_preview/
 scripts/_alert_preview.ps
+scripts/_alert_preview.png
