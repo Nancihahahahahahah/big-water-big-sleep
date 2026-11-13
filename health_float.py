@@ -68,7 +68,7 @@ BASE_DIR = _base_dir()
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 SOUND = "/System/Library/Sounds/Ping.aiff"
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 
 
 def _log(msg):
@@ -241,9 +241,9 @@ def round_rect_pts(x1, y1, x2, y2, r):
 # （自动折行会把「明天还有满格的自己」切成「明天还有满格 / 的自己」，
 # 语义被拦腰截断）。每行控制在 6 个汉字以内最耐看。
 #
-# 标题也受宽度约束：面板内容宽 126pt，而
-# 「emoji(24) + 间隔(7) + 5 个汉字(100)」= 131pt 会溢出面板右边缘。
-# 所以标题一律控制在 4 个汉字（80pt），最宽组合 = 111pt，安全。
+# 标题也受宽度约束：文字栏内容宽 86pt，而
+# 「emoji(21) + 间隔(6) + 4 个汉字(52)」= 79pt 会顶到右边缘。
+# 所以标题一律控制在 4 个汉字，最宽组合 = 79pt，安全。
 ALERT_META = {
     "eye":    ("看看远方", "望向 6 米外\n让眼睛歇一歇", "👀", 20, "brief"),
     "move":   ("起来动动", "站起来伸展\n久坐伤身体", "🧘", 90, "brief"),
@@ -258,35 +258,58 @@ ALERT_META = {
 C_CABIN = "#b8bdc4"       # 舷窗外框灰（与素材图四角一致）
 C_TEXT = "#33465c"        # 主文字：深灰蓝
 C_DIM = "#5c6b7a"         # 次文字：中灰蓝
-C_PANEL = "#f4f6f9"       # 卡片底：极浅灰蓝
 C_BTN_FG = "#f2f6fa"      # 深色按钮上的文字
-C_ACCENT = "#4a6076"      # 主强调色（比主文字略亮一档）
+C_ACCENT = "#5b7086"      # 主强调色：比主文字略亮一档，但不做成纯深色块
 C_ACCENT_HOVER = "#3d5266"
-C_SOFT = "#e6ebf1"        # 浅色底板：比 C_PANEL 稍深，用于次级按钮
+C_SOFT = "#e6ebf1"        # 浅色底板：比卡片稍深，用于次级按钮
 C_LINE = "#dbe2ea"        # 描边：更淡，不再是突兀的深框
 C_HOVER_TINT = "#c9d0d8"  # 齿轮底板 hover 色
+C_GEAR = "#8792a0"        # 齿轮本体：比次文字还淡一档，
+#                         实心深色块在小卡片上太抢眼（像个太阳）
 BUBBLE = (140, 241)          # 常驻泡泡 = 素材图 140x193 + 下方文字条 48
 BUBBLE_IMG = (140, 193)      # 素材图尺寸
 STRIP_H = 48                 # 图下文字条高度（画布灰底，与图四角同色）
-# 提醒卡：左图右文。
-# 面板宽度是排版的第一约束 —— 之前只有 110pt，15pt 粗体标题
-# （emoji + 4 个汉字 ≈ 100pt）几乎撑满两侧，副标题更被挤成
-# 「明天还有满格 / 的自己」这种断行。现在加宽到 150pt。
-ALERT = (302, 236)
-ALERT_IMG = (132, 182)
-ALERT_IMG_XY = (10, 27)      # 图片垂直居中于卡片
-PANEL = (150, 12, 300, 224)  # 文本面板：宽 150, 高 212
-PANEL_CX = 225               # 面板水平中心
-# —— 面板内部垂直节奏（baseline，单位 pt）——
-# 数值来自字体度量实测（PingFang SC）：
-#   15pt 粗体行高 28 / 11pt 行高 21 / 9pt 行高 17
-# 元素从上到下：标题 / 副标题两行 / 按钮 / 底部提示。
-# 每段之间留 20~24pt 呼吸，整块在面板里上下居中。
-ALERT_TITLE_Y = 46           # 标题基线
-ALERT_SUB_Y = 88             # 副标题第一行基线
-ALERT_SUB_LINE = 23          # 副标题行距（比行高 21 多 2，行间不粘连）
-ALERT_BTN_Y = 158            # 按钮中心
-ALERT_HINT_Y = 200           # 底部提示基线
+
+# —— 提醒卡：一个框 ——
+# 2026-11-13 用户第三次发截图：「这个白色框很丑 … 不单独两个框」。
+#
+# 之前的结构是「灰底上的白板」：左边舷窗融在画布灰里（因为素材就画在
+# 这个灰上），右边压着一块近白色 (#f4f6f9) 的圆角板子。
+# 一块又亮又硬的板子挤在柔和的舷窗旁边 —— 这就是「两个框」。
+#
+# 现在整张卡片只有一个颜色、一个圆角矩形：
+#   画布灰 (#b8bdc4) → 衬边（外沿）
+#   卡片色           → 图和字都在这张卡里
+# 卡片色不用冷白，用「暖做旧纸」—— 和冷灰蓝的舷窗形成冷暖对比，
+# 也对上「哑光做旧复古水彩」的调子。
+#
+# 素材要跟着换色：舷窗是画在灰底上的，直接放到暖色卡上会露出
+# 一块灰色矩形（又变回两个框）。换色脚本见 assets/recolor_assets.py：
+# 按「与底色的距离」平滑混合，近底色像素（含投影）换成新底色，
+# 离底色远的金属圈、云、叶片保持原样。
+ALERT_TONE = "warm"                 # 卡片色调：warm=暖做旧纸 / cool=冷调柔灰
+ALERT_CARD_BG = "#e9e5dc"           # 卡片底色（= assets/card_warm_*.png 的底色）
+ALERT = (272, 208)                  # 提醒卡窗口：比之前的 302x236 更小
+ALERT_CARD = (10, 10, 262, 198)     # 卡片矩形（整张卡唯一的框）
+ALERT_CARD_R = 14                   # 卡片圆角
+ALERT_IMG = (106, 146)              # 卡片内舷窗尺寸（素材 card_<tone>_106x146.png）
+ALERT_IMG_XY = (20, 31)             # 舷窗在卡片内的位置（垂直居中）
+ALERT_TEXT = (134, 252)             # 文字栏左右边界
+ALERT_CX = 193                      # 文字栏水平中心
+# —— 文字栏内部垂直节奏（中心线，单位 pt）——
+# 字号比上一版小一档（标题 15→13、副标题 11→10），
+# 标题不再用粗体 —— 「柔和」主要来自去掉 bold 和降低对比，
+# 而不是单纯缩小。
+#
+# 横向预算（实测 PingFang SC）：
+#   emoji(14pt) = 23，4 个汉字(13pt) = 68，间隔 6 → 标题组 97
+#   文字栏内容宽 = 252-134-16 = 102 → 标题组还剩 5pt 余量
+ALERT_TITLE_Y = 47           # 标题中心
+ALERT_SUB_Y = 79             # 副标题第一行中心
+ALERT_SUB_LINE = 19          # 副标题行距
+ALERT_BTN_Y = 140            # 按钮中心
+ALERT_HINT_Y = 170           # 底部提示基线
+ALERT_BTN = (62, 23)         # 按钮尺寸
 
 
 # ---------------- 闹钟式拨轮控件 ----------------
@@ -895,6 +918,15 @@ class FloatApp:
             m = re.search(r"sz_(\d+)x(\d+)\.png$", path)
             if m:
                 imgs[(int(m.group(1)), int(m.group(2)))] = tk.PhotoImage(file=path)
+        # 提醒卡专用素材：底色已经换成卡片色（见 assets/recolor_assets.py），
+        # 所以舷窗能直接融进卡片，不会露出原来那块灰底。
+        self.card_images = {}
+        for path in glob.glob(os.path.join(ASSETS_DIR,
+                                           "card_%s_*.png" % ALERT_TONE)):
+            m = re.search(r"card_\w+_(\d+)x(\d+)\.png$", path)
+            if m:
+                self.card_images[(int(m.group(1)), int(m.group(2)))] = \
+                    tk.PhotoImage(file=path)
         return imgs
 
     # ---------- 调度 ----------
@@ -927,6 +959,12 @@ class FloatApp:
     # ---------- 常驻元素（只创建一次） ----------
     def _create_items(self):
         cv = self.cv
+        # 提醒卡的卡片底 —— 必须最先创建，好让舷窗和文字都压在它上面。
+        # （之前那块近白色面板是后创建的，结果它盖在舷窗图之上，
+        #   逼得布局必须把图和文字分开摆 —— 直接导致「两个框」。）
+        self.card_id = round_rect(cv, *ALERT_CARD, ALERT_CARD_R,
+                                  fill=ALERT_CARD_BG, outline="",
+                                  state="hidden")
         self.img_id = cv.create_image(0, 0, anchor="nw")
         self.icon_id = cv.create_text(
             0, 0, text="🌿", font=ui_font(28), fill=C_TEXT, tags=("icon",))
@@ -962,28 +1000,29 @@ class FloatApp:
         self.silent_id = cv.create_text(
             0, 0, text="🔕", font=ui_font(11), fill=C_DIM,
             tags=("silent",), state="hidden")
-        # 提醒卡右栏（白色圆角面板）
-        self.panel_id = round_rect(cv, *PANEL, 10, fill=C_PANEL,
-                                   outline=C_LINE)
         # 标题里的 emoji 单独成元素：emoji 与汉字混在同一个 text item 里
         # 会共用一个基线，emoji 字形比汉字高出一截，把整行顶得歪歪扭扭
         # （截图里「🌙 该睡觉啦」就是这个问题）。
         # 拆开后 emoji 独立居中、汉字独立排版，互不干扰。
-        self.a_icon_id = cv.create_text(0, 0, text="", font=ui_font(17),
+        #
+        # 字号比上一版小一档、标题去掉粗体：
+        # 「柔和」主要来自去掉 bold（PingFang 的 bold 很重，
+        # 15pt 加粗的中文在小卡片上像标题栏），而不是单纯缩小。
+        self.a_icon_id = cv.create_text(0, 0, text="", font=ui_font(14),
                                         fill=C_TEXT)
-        self.a_title_id = cv.create_text(0, 0, text="", font=ui_font(15, True),
+        self.a_title_id = cv.create_text(0, 0, text="", font=ui_font(13),
                                          fill=C_TEXT)
-        self.a_sub_id = cv.create_text(0, 0, text="", font=ui_font(11),
+        self.a_sub_id = cv.create_text(0, 0, text="", font=ui_font(10),
                                        fill=C_DIM, justify="center")
         self.a_count_id = cv.create_text(0, 0, text="",
-                                         font=ui_font(15, True), fill=C_TEXT)
+                                         font=ui_font(13), fill=C_TEXT)
         # 按钮：底板和文字必须成对出现。
         # 之前 a_btn_txt 的坐标从未设置过，文字永远停在 (0,0)，
         # 所以截图里那个按钮只剩一个空的小灰方块。
         self.a_btn_id = round_rect(cv, 0, 0, 10, 10, 8, fill=C_ACCENT,
                                    outline="", tags=("btn",))
         self.a_btn_txt = cv.create_text(0, 0, text="知道了 ✓",
-                                        font=ui_font(11, True), fill=C_BTN_FG)
+                                        font=ui_font(10, True), fill=C_BTN_FG)
         self.a_hint_id = cv.create_text(0, 0, text="", font=ui_font(9),
                                         fill=C_DIM)
         cv.tag_bind("btn", "<Button-1>", lambda e: self._dismiss())
@@ -1001,9 +1040,14 @@ class FloatApp:
             return
         try:
             self.cv.itemconfig(self.gear_bg, state="normal" if on else "hidden")
-            self.cv.itemconfig(self.gear_id, fill=C_TEXT if on else C_DIM)
+            self.cv.itemconfig(self.gear_id, fill=C_TEXT if on else C_GEAR)
             for iid in getattr(self, "gear_extra", ()):
-                self.cv.itemconfig(iid, fill=C_TEXT if on else C_DIM)
+                # 中心孔是「挖空」，颜色必须跟所在底色一致，
+                # 不能跟着齿轮变灰 —— 否则孔就看不见了。
+                if iid == getattr(self, "gear_hole_id", None):
+                    continue
+                self.cv.itemconfig(iid, fill=C_TEXT if on else C_GEAR)
+            self._set_gear_hole(getattr(self, "gear_bg_color", C_CABIN))
         except tk.TclError:
             pass
 
@@ -1016,22 +1060,24 @@ class FloatApp:
         用图元（圆 + 齿）则跨平台 100% 可靠，且能精确控制大小。
 
         齿轮 = 一个深色外圈圆 + 8 个小方齿 + 一个浅色中心孔。
-        中心孔用面板底色画，等效于「挖空」，比用 outline 描边更干净。
+        中心孔用所在底色画，等效于「挖空」，比用 outline 描边更干净。
+        提醒卡里它落在卡片上、常驻泡泡里落在画布灰上，
+        所以孔的颜色要跟着场景变（见 _set_gear_hole）。
 
-        尺寸经过实测校准：半径 8.2 的齿轮在 302x236 的卡片里
-        过于抢眼（像个主按钮）；半径 6.8 是个「入口图标」的合适体量 ——
-        比原来的字符版（实际只有几个可见像素）清楚得多，
-        又不会喧宾夺主。
+        尺寸经过实测校准：半径 6.8 的齿轮在旧卡片里过于抢眼
+        （像个主按钮）。卡片缩小后整体再收一档 ——
+        半径 5.2 是个「入口图标」的合适体量：
+        再小就点不中了（10.4pt 直径已接近可点下限）。
         """
-        r = 6.8                      # 齿顶半径
+        r = 5.2                      # 齿顶半径
         ring = cv.create_oval(
             cx - r, cy - r, cx + r, cy + r,
-            fill=C_DIM, outline="", tags=("gear",))
+            fill=C_GEAR, outline="", tags=("gear",))
         teeth = []
         for i in range(8):
             a = math.radians(i * 45)
-            tr = 8.6                  # 齿块外半径
-            tw = 2.1                  # 齿块半宽
+            tr = 6.9                  # 齿块外半径
+            tw = 1.9                  # 齿块半宽
             tx, ty = cx + tr * math.cos(a), cy + tr * math.sin(a)
             # 每个齿是一个小方块，用旋转矩阵对齐到径向
             c, s = math.cos(a), math.sin(a)
@@ -1039,17 +1085,27 @@ class FloatApp:
             for dx, dy in ((-tw, -tw), (tw, -tw), (tw, tw), (-tw, tw)):
                 px, py = dx * c - dy * s, dx * s + dy * c
                 pts.extend((tx + px, ty + py))
-            t = cv.create_polygon(pts, fill=C_DIM, outline="", tags=("gear",))
+            t = cv.create_polygon(pts, fill=C_GEAR, outline="", tags=("gear",))
             teeth.append(t)
-        # 中心孔：用面板底色覆盖，画出「挖空」的观感
+        # 中心孔：用所在底色覆盖，画出「挖空」的观感
         hole = cv.create_oval(
-            cx - 2.5, cy - 2.5, cx + 2.5, cy + 2.5,
-            fill=C_PANEL, outline="", tags=("gear",))
+            cx - 1.9, cy - 1.9, cx + 1.9, cy + 1.9,
+            fill=C_CABIN, outline="", tags=("gear",))
         self.gear_extra = tuple(teeth) + (hole,)
+        self.gear_hole_id = hole
         self.gear_center = (cx, cy)
         # 齿和外圈在中心孔之上，所以孔要 tag_raise 到最上层
         cv.tag_raise(hole)
         return ring
+
+    def _set_gear_hole(self, bg):
+        """把齿轮中心孔改成当前所在底色（挖空效果要跟背景一致）。"""
+        self.gear_bg_color = bg
+        if getattr(self, "gear_hole_id", None):
+            try:
+                self.cv.itemconfig(self.gear_hole_id, fill=bg)
+            except tk.TclError:
+                pass
 
     def _hide(self, *ids):
         for i in ids:
@@ -1084,7 +1140,7 @@ class FloatApp:
         w, h = self.w, self.h
         self._hide(self.a_icon_id, self.a_title_id, self.a_sub_id,
                    self.a_count_id, self.a_btn_id, self.a_btn_txt,
-                   self.a_hint_id, self.panel_id)
+                   self.a_hint_id, self.card_id)
         self._show(self.icon_id, self.time_id, self.name_id)
         img = self.images.get(BUBBLE_IMG)
         if img:
@@ -1104,6 +1160,8 @@ class FloatApp:
         # 反复 layout 会累积漂移）；用绝对坐标一次性定位
         gx, gy = w - 17, BUBBLE_IMG[1] + 24
         self._move_gear(gx, gy)
+        # 泡泡模式里齿轮落在画布灰上，中心孔要跟着变回灰
+        self._set_gear_hole(C_CABIN)
         if self.cfg.get("meeting_mode"):
             self._show(self.mute_id)
             cv.coords(self.mute_id, 14, BUBBLE_IMG[1] + 12)
@@ -1124,25 +1182,30 @@ class FloatApp:
         key = self.current
         title, sub, icon, _, _ = ALERT_META[key]
         ix, iy = ALERT_IMG_XY
-        self._show(self.panel_id)   # 面板位置固定，创建时已定，无需重设坐标
+        # 整张卡只有一个框：卡片底 + 里面的舷窗和文字。
+        self._show(self.card_id)
         self._hide(self.time_id, self.name_id)
-        # 提醒卡状态下齿轮挪到面板右下角，始终可点。
+        # 提醒卡状态下齿轮挪到卡片右下角，始终可点。
         # 之前它和底部提示文字挤在同一行（都在 y≈202），直接叠在一起。
         # 现在：齿轮在最右下，提示文字居中偏左，两者水平分离不打架。
         #
-        # 还要把齿轮提到 z-order 最顶层 —— 标题文字「该睡觉啦」的 bbox
-        # 会一直伸到 x≈283，和右上角的齿轮重叠，齿轮会被压在下面看不见。
+        # 还要把齿轮提到 z-order 最顶层 —— 卡片底是先创建的（压在最下），
+        # 但标题文字的 bbox 会伸到齿轮附近，齿轮必须压在所有文字之上。
         self._show(self.gear_id)
         for iid in getattr(self, "gear_extra", ()):
             self._show(iid)
-        self._move_gear(PANEL[2] - 17, PANEL[3] - 15)
+        self._move_gear(ALERT_CARD[2] - 15, ALERT_CARD[3] - 15)
         for iid in (self.gear_id,) + tuple(getattr(self, "gear_extra", ())):
             cv.tag_raise(iid)
+        # 齿轮落在卡片上，中心孔要挖成卡片色
+        self._set_gear_hole(ALERT_CARD_BG)
         self._show(self.icon_id)
-        cv.itemconfig(self.icon_id, font=ui_font(26))
+        cv.itemconfig(self.icon_id, font=ui_font(24))
         cv.coords(self.icon_id,
                   ix + ALERT_IMG[0] * 0.535, iy + ALERT_IMG[1] * 0.46)
-        img = self.images.get(ALERT_IMG)
+        # 用换过底色的卡片素材：舷窗直接融进卡片，不会露出原来那块灰底
+        img = (getattr(self, "card_images", {}) or {}).get(ALERT_IMG) \
+            or self.images.get(ALERT_IMG)
         if img:
             cv.itemconfig(self.img_id, image=img)
         cv.coords(self.img_id, ix, iy)
@@ -1154,11 +1217,11 @@ class FloatApp:
         cv.itemconfig(self.a_icon_id, text=icon)
         cv.itemconfig(self.a_title_id, text=title)
         # 标题整体（含 emoji）水平居中：先量文字宽度，再倒推 emoji 位置
-        title_w = self._text_width(title, ui_font(15, True))
-        icon_w = self._text_width(icon, ui_font(17))
-        gap = 7
+        title_w = self._text_width(title, ui_font(13))
+        icon_w = self._text_width(icon, ui_font(14))
+        gap = 6
         group_w = icon_w + gap + title_w
-        group_left = PANEL_CX - group_w / 2
+        group_left = ALERT_CX - group_w / 2
         cv.coords(self.a_icon_id, group_left + icon_w / 2, ALERT_TITLE_Y)
         cv.coords(self.a_title_id, group_left + icon_w + gap + title_w / 2,
                   ALERT_TITLE_Y)
@@ -1171,26 +1234,26 @@ class FloatApp:
         lines = sub.split("\n")
         cv.itemconfig(self.a_sub_id, text="\n".join(lines))
         for i, line in enumerate(lines):
-            cv.coords(self.a_sub_id, PANEL_CX,
+            cv.coords(self.a_sub_id, ALERT_CX,
                       ALERT_SUB_Y + i * ALERT_SUB_LINE)
 
         if key == "eye":
             # 「看远方」只有 20 秒，不给按钮，直接显示倒数
             self._hide(self.a_btn_id, self.a_btn_txt)
             self._show(self.a_count_id)
-            cv.coords(self.a_count_id, PANEL_CX, ALERT_BTN_Y)
+            cv.coords(self.a_count_id, ALERT_CX, ALERT_BTN_Y)
         else:
             self._hide(self.a_count_id)
             self._show(self.a_btn_id, self.a_btn_txt)
-            bw, bh = 84, 26
-            bx1, by1 = PANEL_CX - bw / 2, ALERT_BTN_Y - bh / 2
+            bw, bh = ALERT_BTN
+            bx1, by1 = ALERT_CX - bw / 2, ALERT_BTN_Y - bh / 2
             bx2, by2 = bx1 + bw, by1 + bh
             # 必须用 coords 给完整点集：move 是相对位移，
             # 反复 layout 会累积漂移（且不会改变尺寸）。
             cv.coords(self.a_btn_id, *round_rect_pts(bx1, by1, bx2, by2, 8))
-            cv.coords(self.a_btn_txt, PANEL_CX, ALERT_BTN_Y)
-        # 提示文字居中偏左，给右下角的齿轮让出位置
-        cv.coords(self.a_hint_id, PANEL_CX - 18, ALERT_HINT_Y)
+            cv.coords(self.a_btn_txt, ALERT_CX, ALERT_BTN_Y)
+        # 提示文字在文字栏里居中；齿轮在更靠下的位置，两者不打架
+        cv.coords(self.a_hint_id, ALERT_CX, ALERT_HINT_Y)
 
     def _text_width(self, text, font):
         """量一段文字的像素宽度（用于水平居中）。"""

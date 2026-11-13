@@ -18,7 +18,7 @@
 
 ### 📦 直接下载成品（推荐）
 
-**[⬇️ 点这里下载 v1.2.1](https://github.com/Nancihahahahahahah/big-water-big-sleep/releases/tag/v1.2.1)**
+**[⬇️ 点这里下载 v1.2.2](https://github.com/Nancihahahahahahah/big-water-big-sleep/releases/tag/v1.2.2)**
 
 | 系统 | 下载 | 大小 |
 |------|------|------|

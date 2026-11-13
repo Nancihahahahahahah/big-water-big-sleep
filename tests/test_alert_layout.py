@@ -67,28 +67,25 @@ class TestAlertLayout(unittest.TestCase):
         self.app._update_auto_hint()
         self.root.update()
 
-    # ---------- 面板宽度 ----------
+    # ---------- 文字栏宽度 ----------
     def test_panel_wide_enough_for_longest_title(self):
-        """最宽的标题组必须放得进面板，不能顶到右边缘。
+        """最宽的标题组必须放得进文字栏，不能顶到右边缘。
 
         标题组 = emoji + 间隔 + 汉字标题。
         用真实字体度量算，而不是写死数字 —— 换字体/字号时测试仍有意义。
         """
-        cv = self.app.cv
-        content_w = hf.PANEL[2] - hf.PANEL[0] - 24   # 左右各留 12pt 内边距
+        content_w = hf.ALERT_TEXT[1] - hf.ALERT_TEXT[0] - 16   # 左右各留 8pt
 
-        f_title = tkinter.font.Font(root=self.root,
-                                    font=hf.ui_font(15, True))
-        f_icon = tkinter.font.Font(root=self.root,
-                                   font=hf.ui_font(17))
+        f_title = tkinter.font.Font(root=self.root, font=hf.ui_font(13))
+        f_icon = tkinter.font.Font(root=self.root, font=hf.ui_font(14))
         for key, (title, _sub, icon, _, _) in hf.ALERT_META.items():
-            group = (f_icon.measure(icon) + 7 + f_title.measure(title))
+            group = (f_icon.measure(icon) + 6 + f_title.measure(title))
             self.assertLessEqual(
                 group, content_w,
-                f"「{title}」标题组宽 {group} > 面板内容宽 {content_w}，会溢出")
+                f"「{title}」标题组宽 {group} > 文字栏内容宽 {content_w}，会溢出")
 
     def test_title_fits_inside_panel(self):
-        """标题的实际绘制范围必须在面板内（不是估算，是 bbox）"""
+        """标题的实际绘制范围必须在文字栏内（不是估算，是 bbox）"""
         cv = self.app.cv
         for key in hf.ALERT_META:
             self.app.current = key
@@ -97,24 +94,24 @@ class TestAlertLayout(unittest.TestCase):
             for iid in (self.app.a_icon_id, self.app.a_title_id):
                 bb = cv.bbox(iid)
                 self.assertIsNotNone(bb, f"{key}: 标题元素没画出来")
-                self.assertGreaterEqual(bb[0], hf.PANEL[0],
-                                        f"{key}: 标题左侧超出面板")
-                self.assertLessEqual(bb[2], hf.PANEL[2],
-                                     f"{key}: 标题右侧超出面板: {bb}")
+                self.assertGreaterEqual(bb[0], hf.ALERT_TEXT[0],
+                                        f"{key}: 标题左侧超出文字栏")
+                self.assertLessEqual(bb[2], hf.ALERT_TEXT[1],
+                                     f"{key}: 标题右侧超出文字栏: {bb}")
 
     def test_subtitle_lines_do_not_overflow_panel(self):
-        """副标题每一行都必须放得进面板。
+        """副标题每一行都必须放得进文字栏。
 
         这是「明天还有满格的自己」被断成两截的那个 bug 的守卫。
         """
         cv = self.app.cv
-        f_sub = tkinter.font.Font(root=self.root, font=hf.ui_font(11))
+        f_sub = tkinter.font.Font(root=self.root, font=hf.ui_font(10))
         for key, (_t, sub, _i, _, _) in hf.ALERT_META.items():
             for line in sub.split("\n"):
                 w = f_sub.measure(line)
                 self.assertLessEqual(
-                    w, hf.PANEL[2] - hf.PANEL[0] - 24,
-                    f"「{key}」副标题行「{line}」宽 {w}，超出面板")
+                    w, hf.ALERT_TEXT[1] - hf.ALERT_TEXT[0] - 16,
+                    f"「{key}」副标题行「{line}」宽 {w}，超出文字栏")
 
     def test_subtitle_uses_manual_line_breaks_only(self):
         """副标题不能靠 width= 自动折行。
@@ -154,16 +151,16 @@ class TestAlertLayout(unittest.TestCase):
             f"提示文字贴着按钮了（间距 {hint[1] - btn[3]}）")
 
     def test_elements_stay_inside_panel_vertically(self):
-        """所有文字元素都要在面板的上下边界内"""
+        """所有文字元素都要在卡片的上下边界内"""
         cv = self.app.cv
         for iid in (self.app.a_icon_id, self.app.a_title_id,
                     self.app.a_sub_id, self.app.a_hint_id):
             bb = cv.bbox(iid)
             self.assertIsNotNone(bb)
-            self.assertGreaterEqual(bb[1], hf.PANEL[1],
-                                    f"{iid} 超出面板上边")
-            self.assertLessEqual(bb[3], hf.PANEL[3],
-                                 f"{iid} 超出面板下边: {bb}")
+            self.assertGreaterEqual(bb[1], hf.ALERT_CARD[1],
+                                    f"{iid} 超出卡片上边")
+            self.assertLessEqual(bb[3], hf.ALERT_CARD[3],
+                                 f"{iid} 超出卡片下边: {bb}")
 
     # ---------- 按钮 ----------
     def test_button_has_visible_label(self):
@@ -301,13 +298,13 @@ class TestAlertLayout(unittest.TestCase):
     def test_titles_are_four_characters_max(self):
         """标题控制在 4 个汉字以内。
 
-        5 个字（100pt）+ emoji + 间隔 = 131pt > 面板内容宽 126pt，
-        会溢出右边缘。用户截图里「该看远方啦」就是顶出去了。
+        5 个字（100pt）+ emoji + 间隔 会超过文字栏内容宽，
+        顶到右边缘。用户截图里「该看远方啦」就是顶出去了。
         """
         for key, (title, _sub, _icon, _, _) in hf.ALERT_META.items():
             self.assertLessEqual(
                 len(title), 4,
-                f"「{title}」{len(title)} 个字，太长了会撑破面板")
+                f"「{title}」{len(title)} 个字，太长了会撑破文字栏")
 
     def test_subtitle_lines_are_short(self):
         """副标题每行不超过 6 个汉字，读起来才不喘"""
@@ -321,6 +318,119 @@ class TestAlertLayout(unittest.TestCase):
         """副标题必须分成两行（一句一行）"""
         for key, (_t, sub, _i, _, _) in hf.ALERT_META.items():
             self.assertIn("\n", sub, f"「{key}」副标题没有换行")
+
+
+class TestSingleCardNoWhitePanel(unittest.TestCase):
+    """提醒卡只能有一个框 —— 白色板子不能再回来。
+
+    背景：2026-11-13 用户第三次发截图投诉，
+    「这个白色框很丑 … 放进去一整个框 … 不单独两个框」。
+
+    旧结构是「灰底上的白板」：左边舷窗融在画布灰里，
+    右边压着一块近白色 (#f4f6f9) 的圆角板子。
+    一块又亮又硬的板子挤在柔和的舷窗旁边 —— 这就是「两个框」。
+
+    现在整张卡只有一个圆角矩形（卡片底），舷窗和文字都在它里面。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = tk.Tk()
+        cls.root.withdraw()
+        cls.cfg = hf.load_config()
+        cls.app = hf.FloatApp(cls.root, cls.cfg)
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.root.destroy()
+        except tk.TclError:
+            pass
+
+    def setUp(self):
+        self.app.current = "sleep"
+        self.app.auto_left = 93
+        self.app._resize_to(*hf.ALERT)
+        self.app._layout_alert()
+        self.root.update()
+
+    def test_no_white_panel_element_exists(self):
+        """不能再有独立的白色面板元素。"""
+        self.assertFalse(
+            hasattr(self.app, "panel_id"),
+            "又出现了独立的 panel_id —— "
+            "提醒卡必须只有一张卡片，不是一个图 + 一个白板")
+
+    def test_no_near_white_fill_in_alert_card(self):
+        """提醒卡里不能出现近白色填充。
+
+        #f4f6f9 那块白板就是「丑」的来源。
+        这条按颜色拦：谁把白板加回来都会被打回。
+        """
+        cv = self.app.cv
+        near_white = []
+        for item in cv.find_all():
+            if cv.itemcget(item, "state") != "normal":
+                continue
+            if cv.type(item) not in ("polygon", "rectangle", "oval"):
+                continue
+            try:
+                fill = cv.itemcget(item, "fill")
+            except tk.TclError:
+                continue
+            if not fill.startswith("#"):
+                continue
+            r, g, b = (int(fill[1:3], 16), int(fill[3:5], 16), int(fill[5:7], 16))
+            # 近白：三个通道都很高，且彼此接近（冷白）
+            if r > 235 and g > 235 and b > 235 and abs(r - b) < 12:
+                near_white.append((item, fill))
+        self.assertEqual(
+            near_white, [],
+            f"提醒卡里又出现了近白填充 {near_white} —— "
+            "白色板子就是「两个框」的根源，别加回来")
+
+    def test_card_is_the_only_container(self):
+        """卡片底必须是最先创建的那一个（在所有元素之下）。
+
+        之前那块白板是后创建的，结果它盖在舷窗图之上，
+        逼得布局必须把图和文字分开放 —— 直接导致「两个框」。
+        """
+        cv = self.app.cv
+        items = cv.find_all()
+        self.assertIn(self.app.card_id, items, "卡片底没画出来")
+        self.assertEqual(
+            items.index(self.app.card_id), 0,
+            "卡片底必须是画布上第一个元素，否则会盖住舷窗和文字")
+
+    def test_porthole_uses_recolored_asset(self):
+        """舷窗必须用换过底色的卡片素材。
+
+        舷窗原本是画在灰底上的，直接放到暖色卡片上会露出
+        一块灰色矩形 —— 又是两个框。
+        """
+        card_imgs = getattr(self.app, "card_images", {})
+        self.assertIn(
+            hf.ALERT_IMG, card_imgs,
+            f"缺少卡片素材 card_{hf.ALERT_TONE}_{hf.ALERT_IMG[0]}x"
+            f"{hf.ALERT_IMG[1]}.png —— "
+            "舷窗会用原素材，带一块灰底出来")
+
+    def test_title_font_is_not_bold(self):
+        """标题不能用粗体。
+
+        「柔和」主要来自去掉 bold —— PingFang 的粗体很重，
+        15pt 加粗中文在小卡片上像标题栏，不像提醒。
+        """
+        cv = self.app.cv
+        font = cv.itemcget(self.app.a_title_id, "font")
+        self.assertNotIn(
+            "bold", font,
+            f"标题又变回粗体了（{font}）—— 用 normal 权重")
+
+    def test_alert_card_is_smaller_than_before(self):
+        """提醒卡整体要比上一版小。"""
+        self.assertLessEqual(hf.ALERT[0], 280, "提醒卡宽度没缩小")
+        self.assertLessEqual(hf.ALERT[1], 216, "提醒卡高度没缩小")
 
 
 if __name__ == "__main__":
