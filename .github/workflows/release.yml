@@ -50,6 +50,11 @@ jobs:
             *x86_64*arm64*|*arm64*x86_64*) echo "    [OK] universal2 双架构" ;;
             *) echo "[X] 不是 universal2（实际: $ARCHS）—— Intel Mac 用户无法运行"; exit 1 ;;
           esac
+      - name: Verify package contents
+        run: |
+          # 产物自检：CTK 主题必须在（否则设置面板没有现代界面），
+          # PIL 必须不在（它的单架构扩展会破坏 universal2 打包）。
+          python3 scripts/verify_package.py "dist/Health Float.app"
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-macOS
@@ -92,7 +97,14 @@ jobs:
           # 几十字节的空壳 HealthFloat-Windows.zip）。
           python -c "import shutil; shutil.make_archive('dist/HealthFloat-Windows','zip', root_dir='dist', base_dir='Health Float')"
           ls -lh dist/*.zip
-          python -c "import zipfile; z=zipfile.ZipFile('dist/HealthFloat-Windows.zip'); names=z.namelist(); print('entries:', len(names)); print('self-included:', [n for n in names if n.endswith('.zip')])"
+          python -c "import zipfile; z=zipfile.ZipFile('dist/HealthFloat-Windows.zip'); names=z.namelist(); print('entries:', len(names)); print('self-included:', [n for n in names if n.endswith('.zip') and 'base_library' not in n])"
+      - name: Verify package contents
+        shell: bash
+        run: |
+          # 产物自检：CTK 主题必须在（否则设置面板没有现代界面），
+          # PIL 必须不在（它的单架构扩展会破坏 universal2 打包），
+          # zip 不得自包含。这三条都是「不报错但结果不对」的坑。
+          python3 scripts/verify_package.py dist/HealthFloat-Windows.zip
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-Windows
@@ -118,6 +130,12 @@ jobs:
           # linux-installer.sh 内部自己做 onedir 打包，这里不要重复打
           ./linux-installer.sh
           ls -lh dist/
+      - name: Verify package contents
+        run: |
+          # 产物自检：CTK 主题必须在（否则设置面板没有现代界面），
+          # PIL 必须不在（单架构扩展会破坏 universal2 打包）。
+          # 检查 onedir 目录（AppImage 是它的封装）。
+          python3 scripts/verify_package.py dist/HealthFloat
       - uses: actions/upload-artifact@v4
         with:
           name: HealthFloat-Linux
