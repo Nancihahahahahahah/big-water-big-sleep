@@ -404,6 +404,43 @@ class TestReleaseAssets(unittest.TestCase):
             "用户打开 DMG 少了一个拖拽入口",
         )
 
+    def test_release_configures_git_identity_before_tagging(self):
+        """打注解 tag 之前必须配置 git 身份。
+
+        CI runner 上默认没有 committer 身份，`git tag -a` 会直接失败：
+
+            Committer identity unknown
+            fatal: empty ident name ... not allowed
+
+        这条路径只有「新版本号」才会走到 ——
+        版本号已经存在时直接跳过打 tag。
+        所以复用旧版本号发布时一直没暴露，一升版本就炸。
+        """
+        release = _read(".github/workflows/release.yml")
+        tag_step = release.split("- name: Ensure tag exists", 1)[1].split(
+            "- uses: softprops/action-gh-release", 1
+        )[0]
+
+        # 先剥掉注释行 —— 否则注释里提到「git tag -a」也会被当成命令
+        code = "\n".join(
+            line for line in tag_step.splitlines()
+            if not line.strip().startswith("#")
+        )
+
+        config_at = code.find("git config user.name")
+        tag_at = code.find("git tag -a")
+        self.assertNotEqual(
+            config_at,
+            -1,
+            "打 tag 前没有配置 git 身份 —— 发新版本号时必然失败",
+        )
+        self.assertNotEqual(tag_at, -1, "找不到 git tag -a")
+        self.assertLess(
+            config_at,
+            tag_at,
+            "git 身份配置必须排在 git tag -a 之前",
+        )
+
 
 class TestVersionConsistency(unittest.TestCase):
     """版本号一致性。"""

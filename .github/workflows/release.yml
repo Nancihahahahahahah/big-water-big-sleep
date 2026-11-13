@@ -175,6 +175,12 @@ jobs:
           echo "tag: $TAG"
           git fetch --tags --force || true
           if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            # 注解 tag 需要提交者身份，CI runner 上默认没配 ——
+            # 不配的话 git tag -a 直接以 "Committer identity unknown" 失败。
+            # 这条路径只有「新版本号」才会走到（老版本号 tag 已存在），
+            # 所以之前复用 v1.2.0 发布时一直没暴露，一升版本就炸。
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$TAG" -m "Release $TAG"
             git push origin "refs/tags/$TAG"
             echo "created tag $TAG"
