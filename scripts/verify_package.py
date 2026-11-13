@@ -35,9 +35,10 @@ def _check_windows(zip_path):
         names = z.namelist()
 
     themes = [n for n in names if "themes" in n and n.endswith(".json")]
-    print("  CTK 主题文件: %d" % len(themes))
+    print("  CTK theme files: %d" % len(themes))
     if not themes:
-        return "[X] 缺少 CustomTkinter 主题 —— 设置面板会退化成原生 tk 界面"
+        return ("[X] missing CustomTkinter themes - "
+                "settings panel would degrade to plain tkinter")
 
     # PIL 不得进包：它的编译扩展是单架构的，会破坏 universal2 打包。
     pil_hits = [
@@ -47,12 +48,12 @@ def _check_windows(zip_path):
         or "_imaging" in n
     ]
     if pil_hits:
-        return "[X] 产物里混进了 PIL: %s" % pil_hits[:3]
+        return "[X] Pillow leaked into the package: %s" % pil_hits[:3]
 
     # base_library.zip 是 PyInstaller 自带的 Python 运行时，不是自包含
     self_included = [n for n in names if n.endswith(".zip") and "base_library" not in n]
     if self_included:
-        return "[X] zip 把自己包进去了: %s" % self_included[:3]
+        return "[X] zip contains itself: %s" % self_included[:3]
 
     return None
 
@@ -69,19 +70,22 @@ def _check_dir(root):
             if fn.startswith("PIL") or "_avif" in fn or "_imaging" in fn:
                 pil_hits.append(full)
 
-    print("  CTK 主题文件: %d" % len(themes))
+    print("  CTK theme files: %d" % len(themes))
     if not themes:
-        return "[X] 缺少 CustomTkinter 主题 —— 设置面板会退化成原生 tk 界面"
+        return ("[X] missing CustomTkinter themes - "
+                "settings panel would degrade to plain tkinter")
 
     if pil_hits:
-        return "[X] 产物里混进了 PIL: %s" % pil_hits[:3]
+        return "[X] Pillow leaked into the package: %s" % pil_hits[:3]
 
     return None
 
 
 def main(argv):
     if len(argv) < 2:
-        print(__doc__)
+        # 注意：不要 print(__doc__) —— docstring 是中文，
+        # Windows 控制台是 cp1252，打印中文会抛 UnicodeEncodeError。
+        print("usage: verify_package.py <zip|dir>")
         return 2
 
     target = argv[1]
@@ -90,14 +94,14 @@ def main(argv):
     elif zipfile.is_zipfile(target):
         error = _check_windows(target)
     else:
-        print("[X] 找不到产物: %s" % target)
+        print("[X] artifact not found: %s" % target)
         return 1
 
     if error:
         print(error)
         return 1
 
-    print("[OK] 产物内容检查通过")
+    print("[OK] package contents verified")
     return 0
 
 

@@ -7,9 +7,14 @@
 
 1. **CTK 资源**：CustomTkinter 的主题是 JSON 数据文件，不是 Python 模块。
    PyInstaller 自带 hook-customtkinter.py 会收 collect_data_files，
-   但显式 --collect-all 更稳，而且所有打包脚本必须口径一致 ——
+   但显式 --collect-data 更稳，而且所有打包脚本必须口径一致 ——
    CI 的 release.yml 和本地的 build_windows.sh / linux-installer.sh
    是两份独立的实现，很容易只改一份。
+
+   注意这里必须是 --collect-data 而不是 --collect-all：
+   --collect-all 会在生成 spec 时把 PIL 的二进制塞进 binaries 列表，
+   而 --exclude-module 只管模块分析，管不到显式传入的 binaries ——
+   两者互相抵消，PIL 照样进包。
 
 2. **zip 自包含**：make_archive(root_dir='dist') 会把正在写入的 zip
    自己也包进去，用户解压会看到一个几十字节的空壳。
@@ -21,7 +26,15 @@
 
 import os
 import re
+import sys
 import unittest
+
+# 让控制台输出不依赖系统编码：Windows 是 cp1252，
+# 打印中文断言消息时会抛 UnicodeEncodeError，
+# 把「测试失败」变成「测试崩溃」，真正的失败原因反而看不见。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _utf8_console  # noqa: F401,E402
+
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -59,20 +72,42 @@ class TestPackagingConsistency(unittest.TestCase):
                     "%s 完全没提 customtkinter —— 和其他脚本不一致" % rel,
                 )
 
-    def test_every_packer_passes_collect_all(self):
-        """每个打包脚本都要传 --collect-all customtkinter。
+    def test_every_packer_passes_collect_data(self):
+        """每个打包脚本都要传 --collect-data customtkinter。
 
         PyInstaller 自带 hook 会收数据文件（主题 JSON），
-        但 --collect-all 还会收 hiddenimports 和 binaries —— 更稳。
+        显式 --collect-data 更稳。
         更重要的是：五个脚本口径必须一致，否则 CI 和本地出的包不一样。
         """
         for rel in self.ALL_PACKERS:
             with self.subTest(packer=rel):
                 content = _read(rel)
                 self.assertIn(
+                    "--collect-data customtkinter",
+                    content,
+                    "%s 缺少 --collect-data customtkinter" % rel,
+                )
+
+    def test_no_packer_uses_collect_all(self):
+        """绝不能用 --collect-all customtkinter。
+
+        --collect-all 会在生成 spec 时执行 collect_all()，
+        把 PIL 的二进制（_imaging*.so）直接放进 spec 的 binaries 列表。
+        --exclude-module 只影响模块分析阶段，管不到显式传入的 binaries ——
+        两者互相抵消，结果 PIL 照样进包。
+
+        实测（用 scripts/verify_package.py 验真实构建产物）：
+          --collect-all  → 包里有 PIL/_imaging*.so
+          --collect-data → PIL 0 个，CTK 主题 json 4 个，运行时正常
+        """
+        for rel in self.ALL_PACKERS:
+            with self.subTest(packer=rel):
+                content = _read(rel)
+                self.assertNotIn(
                     "--collect-all customtkinter",
                     content,
-                    "%s 缺少 --collect-all customtkinter" % rel,
+                    "%s 用了 --collect-all —— 它会把 PIL 二进制拉进来，"
+                    "抵消掉 --exclude-module PIL" % rel,
                 )
 
     def test_release_workflow_windows_matches_local_script(self):
@@ -84,7 +119,7 @@ class TestPackagingConsistency(unittest.TestCase):
         release = _read(".github/workflows/release.yml")
         windows_job = release.split("windows:", 1)[1].split("linux:", 1)[0]
 
-        self.assertIn("--collect-all customtkinter", windows_job)
+        self.assertIn("--collect-data customtkinter", windows_job)
         self.assertIn("--add-data", windows_job)
         self.assertIn("assets", windows_job)
 
@@ -92,7 +127,7 @@ class TestPackagingConsistency(unittest.TestCase):
 class TestPillowExclusion(unittest.TestCase):
     """Pillow 必须被排除在包外。
 
-    这条是被 CI 逼出来的：加了 --collect-all customtkinter 之后，
+    这条是被 CI 逼出来的：加了 --collect-data customtkinter 之后，
     macOS 的 universal2 构建直接挂了：
 
         IncompatibleBinaryArchError:
@@ -148,6 +183,64 @@ class TestPillowExclusion(unittest.TestCase):
             os.path.exists(os.path.join(REPO_ROOT, "assets", "app-icon.png")),
             "assets/app-icon.png 缺失 —— 构建期就得依赖 Pillow",
         )
+
+
+class TestMacOSDistSync(unittest.TestCase):
+    """macOS 产物同步到 dist/ 时必须是「精确镜像」，不能是「合并」。
+
+    踩坑记录：11-10 用 --collect-all 打的包里有 PIL/，
+    11-13 改成 --collect-data 重新构建，构建产物本身已经干净，
+    但 dist/Health Float.app 里旧版的 PIL 文件还在 ——
+    因为 ditto 是合并语义，目标里多出来的旧文件不会被清掉。
+    verify_package.py 于是一直报「Pillow leaked into the package」，
+    差点误判成打包参数没生效。
+
+    解法是 rsync --delete：镜像语义，结果等价于「先删后拷」，
+    但没有 rm -rf 那一步（批量删除在有安全守卫的环境里会被拦下）。
+    """
+
+    SCRIPT = "build_macos_app.sh"
+
+    def test_uses_rsync_delete_for_dist(self):
+        """dist/ 的 .app 必须用 rsync --delete 同步。"""
+        content = _read(self.SCRIPT)
+        self.assertIn(
+            "rsync -a --delete",
+            content,
+            "%s 没用 rsync --delete 同步 dist —— "
+            "旧版残留文件会留在产物里（PIL 就是这么混进去的）" % self.SCRIPT,
+        )
+
+    def test_no_ditto_merge_into_dist(self):
+        """不能再用 ditto 合并的方式把 .app 拷进 dist/。
+
+        ditto 复制目录是合并语义：不删目标里多余的旧文件。
+        """
+        content = _read(self.SCRIPT)
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("ditto "):
+                continue
+            self.fail(
+                "%s 里有 ditto 复制目录：%s\n"
+                "ditto 是合并语义，旧文件不会被清掉；"
+                "请改用 rsync -a --delete" % (self.SCRIPT, stripped)
+            )
+
+    def test_no_bulk_rm_of_app_bundle(self):
+        """不要 rm -rf 整个 .app。
+
+        一次删几百个文件属于批量删除，在有安全守卫的环境里会被拦下，
+        整个打包流程直接中断。rsync --delete 没有这个问题。
+        """
+        content = _read(self.SCRIPT)
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("rm -rf") and ".app" in stripped:
+                self.fail(
+                    "%s 里有 rm -rf 整个 .app：%s\n"
+                    "请改用 rsync -a --delete" % (self.SCRIPT, stripped)
+                )
 
 
 class TestWindowsZip(unittest.TestCase):

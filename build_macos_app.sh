@@ -166,9 +166,22 @@ mkdir -p "$BUILD_DIR"
 # 本项目根本不需要 PIL：图片一律用 tk.PhotoImage 读 PNG。
 # CTK 那边 PIL 是 try/except 包着的软依赖，排除后照常工作
 # （已验证：排除 PIL 后 CTK 面板正常渲染，主题正常加载）。
+#
+# 为什么用 --collect-data 而不是 --collect-all：
+# --collect-all 会在生成 spec 时执行 collect_all('customtkinter')，
+# 把 PIL 的**二进制**直接塞进 spec 的 binaries 列表。
+# 而 --exclude-module 只影响「模块分析」阶段，管不到显式传入的
+# binaries —— 两者会互相抵消，结果 PIL 照样进包。
+#
+# 实测（用真实项目构建 + scripts/verify_package.py 验证）：
+#   --collect-all  → 包里有 PIL/_imaging*.so（3 个）
+#   --collect-data → PIL 0 个，CTK 主题 json 4 个，运行时 OK
+#
+# CTK 需要收的只有主题 json 这些数据文件，
+# --collect-data 刚好只收数据、不收二进制，正是我们要的。
 CTK_ARGS=(--exclude-module PIL)
 if [ "$HAVE_CTK" = "1" ]; then
-    CTK_ARGS+=(--collect-all customtkinter)
+    CTK_ARGS+=(--collect-data customtkinter)
 fi
 if [ -n "$TARGET_ARCH" ]; then
     "$BUILD_PY" -m PyInstaller \
@@ -195,9 +208,27 @@ else
         "$ABS_DIR/health_float.py"
 fi
 
-# 把产物复制到 dist/（用 ditto 覆盖，不做批量删除）
+# 把产物复制到 dist/
+#
+# 必须用 rsync --delete 做「精确镜像」，不能直接 ditto 覆盖：
+# ditto 是「合并」语义 —— 目标目录里**多出来的旧文件会留下来**。
+# 实测踩过：11-10 那个用 --collect-all 打的包里有 PIL/，
+# 后来改成 --collect-data 重新构建，产物本身已经没有 PIL 了，
+# 但 dist/ 里的旧 PIL 文件还在（dist/Health Float.app 的目录时间
+# 停在 11-10，里面的文件却是 11-13 —— 正是合并的证据）。
+# 结果 verify_package.py 一直报「Pillow leaked into the package」，
+# 而实际构建产物是干净的 —— 差点误判成打包参数没生效。
+#
+# 为什么用 rsync 而不是「先 rm -rf 再 ditto」：
+#   1. rm -rf 整个 .app 属于批量删除，一次删几百个文件，
+#      在有安全守卫的环境里会被拦下，构建流程直接中断；
+#   2. rsync --delete 是「同步」语义，一次到位，
+#      结果等价于先删后拷，但没有批量删除这一步。
+#   3. rsync 保留符号链接和权限（Frameworks 里的 python3 -> Python
+#      这类软链必须原样保留），拷贝完照常 xattr -cr + ad-hoc 重新签名，
+#      签名不依赖扩展属性，所以 rsync 丢不掉任何关键信息。
 mkdir -p "$ABS_DIR/dist"
-ditto "$BUILD_DIR/dist/$APP_NAME.app" "$ABS_DIR/dist/$APP_NAME.app"
+rsync -a --delete "$BUILD_DIR/dist/$APP_NAME.app/" "$ABS_DIR/dist/$APP_NAME.app/"
 
 # 打包后把图标塞进 .app
 APP="$ABS_DIR/dist/$APP_NAME.app"
@@ -231,7 +262,9 @@ SIZE=$(du -sh "$APP" | cut -f1)
 DMG="$ABS_DIR/dist/Health Float.dmg"
 DMG_ROOT="$ABS_DIR/.build/dmg-root"
 mkdir -p "$DMG_ROOT"
-ditto "$APP" "$DMG_ROOT/$APP_NAME.app"
+# 同样是镜像语义：DMG_ROOT 会跨构建存活，
+# 用 ditto 合并会把上一版的旧文件带进 DMG。
+rsync -a --delete "$APP/" "$DMG_ROOT/$APP_NAME.app/"
 ln -sfn /Applications "$DMG_ROOT/Applications"
 hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_ROOT" -ov -format UDZO "$DMG" 2>&1 | tail -1
 DMG_SIZE=$(du -sh "$DMG" | cut -f1)

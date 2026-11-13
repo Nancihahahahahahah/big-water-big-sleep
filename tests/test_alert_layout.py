@@ -27,6 +27,13 @@ import os
 import sys
 import unittest
 
+# 让控制台输出不依赖系统编码：Windows 是 cp1252，
+# 打印中文断言消息时会抛 UnicodeEncodeError，
+# 把「测试失败」变成「测试崩溃」，真正的失败原因反而看不见。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _utf8_console  # noqa: F401,E402
+
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import tkinter as tk  # noqa: E402

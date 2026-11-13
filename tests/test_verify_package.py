@@ -12,6 +12,13 @@ import shutil
 import sys
 import tempfile
 import unittest
+
+# 让控制台输出不依赖系统编码：Windows 是 cp1252，
+# 打印中文断言消息时会抛 UnicodeEncodeError，
+# 把「测试失败」变成「测试崩溃」，真正的失败原因反而看不见。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _utf8_console  # noqa: F401,E402
+
 import zipfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -57,7 +64,7 @@ class TestVerifyPackage(unittest.TestCase):
             fh.write("x")
         error = verify_package._check_dir(root)
         self.assertIsNotNone(error)
-        self.assertIn("PIL", error)
+        self.assertIn("Pillow", error)
 
     def test_avif_extension_is_rejected(self):
         """Pillow 的 _avif 扩展是 universal2 构建失败的直接元凶。"""
@@ -69,7 +76,7 @@ class TestVerifyPackage(unittest.TestCase):
             fh.write("x")
         error = verify_package._check_dir(root)
         self.assertIsNotNone(error)
-        self.assertIn("PIL", error)
+        self.assertIn("Pillow", error)
 
     # ---------- zip 型产物（Windows） ----------
 
@@ -114,7 +121,7 @@ class TestVerifyPackage(unittest.TestCase):
         )
         error = verify_package._check_windows(path)
         self.assertIsNotNone(error)
-        self.assertIn("自己包进去", error)
+        self.assertIn("contains itself", error)
 
     def test_missing_themes_in_zip_is_rejected(self):
         path = self._make_zip("nothemes.zip", ["Health Float/Health Float.exe"])
@@ -132,7 +139,7 @@ class TestVerifyPackage(unittest.TestCase):
         )
         error = verify_package._check_windows(path)
         self.assertIsNotNone(error)
-        self.assertIn("PIL", error)
+        self.assertIn("Pillow", error)
 
     # ---------- 入口 ----------
 
@@ -161,7 +168,7 @@ class TestReleaseWorkflowUsesVerifier(unittest.TestCase):
         self.assertEqual(
             self.release.count("scripts/verify_package.py"),
             3,
-            "三个平台都该调用 verify_package.py",
+            "all three platforms must call verify_package.py",
         )
 
     def test_verifier_script_exists(self):

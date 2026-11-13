@@ -83,7 +83,7 @@ jobs:
           python -m PyInstaller --noconfirm --clean --windowed \
             --name "Health Float" --distpath dist --workpath build --specpath build \
             --add-data "${ASSETS};assets" \
-            --collect-all customtkinter \
+            --collect-data customtkinter \
             --exclude-module PIL \
             health_float.py
       - name: Zip

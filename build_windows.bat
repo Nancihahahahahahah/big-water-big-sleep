@@ -29,11 +29,11 @@ if errorlevel 1 (
         set "CTKARG="
     ) else (
         echo [OK] 安装成功，将打包现代界面版
-        set "CTKARG=--collect-all customtkinter"
+        set "CTKARG=--collect-data customtkinter"
     )
 ) else (
     echo [OK] CustomTkinter 已安装，将打包现代界面版
-    set "CTKARG=--collect-all customtkinter"
+    set "CTKARG=--collect-data customtkinter"
 )
 
 echo == 打包中（首次约 1-2 分钟）==

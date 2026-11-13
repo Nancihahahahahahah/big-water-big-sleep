@@ -26,6 +26,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Windows 控制台默认是 cp1252，打印中文会抛 UnicodeEncodeError。
+      # unittest 打印失败详情时会把断言消息（这里是中文）写到 stderr ——
+      # 于是「测试失败」会变成「测试崩溃」，真正的失败原因反而看不见。
+      # 全平台强制 UTF-8 控制台。
+      - name: Force UTF-8 console
+        run: |
+          echo "PYTHONIOENCODING=utf-8" >> $GITHUB_ENV
+          echo "PYTHONUTF8=1" >> $GITHUB_ENV
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
